@@ -1,0 +1,28 @@
+### macOS ###
+.DS_Store
+
+### Node ###
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+### VS Code ###
+.vscode/
+
+### Build artifacts ###
+dist/
+build/
+
+### Environment ###
+.env
+
+### Logs ###
+logs/
+*.log
+
+### Temporary files ###
+*.tmp
+*.swp
+
+### OS Generated Files ###
+Thumbs.db
