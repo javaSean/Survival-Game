@@ -47,7 +47,7 @@ const gameState = {
   jumpBufferTime: 0,
 
   // Resources
-  sticksCollected: 20,
+  sticksCollected: 5,
   waterCollected: 0,
   score: 0,
 
@@ -56,9 +56,9 @@ const gameState = {
   nearFire: false,
   fireContactTime: 0,
   temperature: 65,
-  gameTime: 6 * 60, // Start at 6:00 AM (in minutes)
+  gameTime: 7 * 60, // Start at 7:00 AM (in minutes)
   gameDay: 0, // Track current day number
-  dayStart: 6 * 60, // Track when current day started (6:00 AM)
+  dayStart: 7 * 60, // Track when current day started (7:00 AM)
 
   // Tree climbing
   treeTrunk: null,
@@ -125,6 +125,70 @@ const gameState = {
 // =======================
 // HELPER FUNCTIONS
 // =======================
+// Global counter for +1 rotation alternation
+let plusOneCounter = 0;
+
+function showPlusOne(scene, x, y, count = 1) {
+  // Spawn 'count' number of +1 images with slight random offset
+  for (let i = 0; i < count; i++) {
+    const offsetX = Phaser.Math.Between(-20, 20);
+    const offsetY = Phaser.Math.Between(-15, 15);
+    
+    const plusOneImg = scene.add.image(x + offsetX, y - 60 + offsetY, 'plusOne');
+    plusOneImg.setScale(0.8);
+    plusOneImg.setDepth(1000);
+    plusOneImg.setAlpha(1);
+    
+    // Alternate between normal and 90 degrees left rotation using global counter
+    let targetX;
+    if (plusOneCounter % 2 === 1) {
+      plusOneImg.angle = -70.5; // Rotated
+      targetX = plusOneImg.x - 60; // Move left
+    } else {
+      targetX = plusOneImg.x + 60; // Move right
+      plusOneImg.angle = -22.5;
+    }
+    plusOneCounter++;
+    
+    // Animate: stay visible for 400ms, then float up and fade out, move diagonally
+    scene.tweens.add({
+      targets: plusOneImg,
+      x: targetX,
+      y: plusOneImg.y - 50,
+      alpha: { from: 1, to: 0, delay: 800 },
+      duration: 1000,
+      ease: 'Cubic.easeOut',
+      onComplete: () => {
+        plusOneImg.destroy();
+      }
+    });
+  }
+}
+
+// High Score Management Functions
+function loadHighScores() {
+  const saved = localStorage.getItem('survivalHighScores');
+  return saved ? JSON.parse(saved) : [];
+}
+
+function saveHighScores(scores) {
+  localStorage.setItem('survivalHighScores', JSON.stringify(scores));
+}
+
+function isHighScore(score) {
+  const scores = loadHighScores();
+  return scores.length < 10 || score > scores[9].score;
+}
+
+function addHighScore(name, score) {
+  const scores = loadHighScores();
+  scores.push({ name, score });
+  scores.sort((a, b) => b.score - a.score);
+  // Don't limit to 10 - keep all scores
+  saveHighScores(scores);
+  return scores.findIndex(s => s.name === name && s.score === score) + 1; // Return rank
+}
+
 function showInfoText(message, duration = 2000) {
   if (gameState.infoText) {
     // Clear existing timer if any
@@ -157,7 +221,7 @@ function showBuildMenuText(itemName, cost) {
     }
 
     // Set main text
-    gameState.infoText.setText(`Build a ${itemName} `);
+    gameState.infoText.setText(`${gameState.buildableItems.length>1?"← ":""}Build a ${itemName}${gameState.buildableItems.length>1?" →":""}`);
     gameState.infoText.setVisible(true);
 
     // Show colored check and x with keyboard hints
@@ -180,9 +244,175 @@ function hideBuildMenuText() {
 }
 
 // =======================
-// PRELOAD ASSETS
+// START MENU SCENE
 // =======================
-function preload() {
+class StartMenuScene extends Phaser.Scene {
+  constructor() {
+    super('StartMenu');
+  }
+
+  preload() {
+    this.load.image('introBackground', 'assets/survival_intro.jpg');
+    this.load.audio('titleFire', 'assets/audio/fire.mp3');
+  }
+
+  create() {
+    // Start fire audio looping
+    this.titleFireSound = this.sound.add('titleFire', { loop: true, volume: 0.5 });
+    this.titleFireSound.play();
+    // Add background
+    const bg = this.add.image(w / 2, h, 'introBackground');
+    bg.setOrigin(0.5, 1); // Anchor from bottom center
+    const scaleX = w / 1200;
+    const scaleY = h / 800;
+    const scale = Math.max(scaleX, scaleY);
+    bg.setScale(scale);
+
+    
+    // Start button
+    const startButton = this.add.text(w / 2, h / 2+140, 'START', {
+      fontSize: '48px',
+      fontFamily: 'Arial',
+      color: '#ffffff',
+      stroke: '#000000',
+      strokeThickness: 4,
+      backgroundColor: '#00000088',
+      padding: { x: 40, y: 20 }
+    });
+    startButton.setOrigin(0.5);
+    startButton.setInteractive({ useHandCursor: true });
+    startButton.on('pointerover', () => {
+      startButton.setColor('#ffff00');
+    });
+    startButton.on('pointerout', () => {
+      startButton.setColor('#ffffff');
+    });
+    startButton.on('pointerdown', () => {
+      this.titleFireSound.stop();
+      this.scene.start('Game');
+    });
+
+    // How To Play button
+    const howToButton = this.add.text(w /2, h / 2 + 100+130, 'HOW TO PLAY', {
+      fontSize: '24px',
+      fontFamily: 'Arial',
+      color: '#ffffff',
+      stroke: '#000000',
+      strokeThickness: 4,
+      backgroundColor: '#00000088',
+      padding: { x: 20, y: 10 }
+    });
+    howToButton.setOrigin(0.5);
+    howToButton.setInteractive({ useHandCursor: true });
+    howToButton.on('pointerover', () => {
+      howToButton.setColor('#ffff00');
+    });
+    howToButton.on('pointerout', () => {
+      howToButton.setColor('#ffffff');
+    });
+    howToButton.on('pointerdown', () => {
+      this.titleFireSound.stop();
+      this.scene.start('HowToPlay');
+    });
+  }
+}
+
+// =======================
+// HOW TO PLAY SCENE
+// =======================
+class HowToPlayScene extends Phaser.Scene {
+  constructor() {
+    super('HowToPlay');
+  }
+
+  preload() {
+    this.load.image('introBackground', 'assets/survival_intro.jpg');
+  }
+
+  create() {
+    // Add background
+    const bg = this.add.image(w / 2, h, 'introBackground');
+    bg.setOrigin(0.5, 1); // Anchor from bottom center
+    const scaleX = w / 1200;
+    const scaleY = h / 800;
+    const scale = Math.max(scaleX, scaleY);
+    bg.setScale(scale);
+
+    // Add semi-transparent overlay
+    const overlay = this.add.rectangle(w / 2, h / 2, w, h, 0x000000, 0.7);
+
+    // Title
+    const title = this.add.text(w / 2, 60, 'HOW TO PLAY', {
+      fontSize: '48px',
+      fontFamily: 'Arial',
+      color: '#ffffff',
+      stroke: '#000000',
+      strokeThickness: 4
+    });
+    title.setOrigin(0.5);
+
+    // Instructions
+    const instructions = [
+      'GOAL: Survive as long as possible',
+      '',
+      'GROUND:',
+      'Left/Right - Move',
+      'Up - Pick Berries',
+      'Down - Drink from Bucket',
+      'Spacebar - Hold to charge/Release to Jump',
+      '',
+      'CLIMBING:',
+      'Up/Down - Climb',
+      'Spacebar - Use Chainsaw',
+      '',
+      'BUILDING:',
+      'B - Build Menu',
+      'Left/Right - Cycle Options/Choose Placement',
+      'Up - Cycle Shelter Types',
+      '',
+      'SURVIVAL:',
+      '\u2022 Manage hunger, thirst, and temperature',
+      '\u2022 Build fires to stay warm at night',
+      '\u2022 Collect rainwater with buckets',
+      '\u2022 Pick berries from bushes for food',
+      '\u2022 Build shelters for protection',
+      '',
+      'Press ESC to return to Main Menu',
+      'Press any other key to start playing...'
+    ];
+
+    const instructionText = this.add.text(w / 2, 120, instructions.join('\n'), {
+      fontSize: '20px',
+      fontFamily: 'Arial',
+      color: '#ffffff',
+      align: 'left',
+      lineSpacing: 6
+    });
+    instructionText.setOrigin(0.5, 0);
+
+    // Listen for ESC to return to main menu
+    this.input.keyboard.on('keydown-ESC', () => {
+      this.scene.start('StartMenu');
+    });
+
+    // Listen for any other key press to start game
+    this.input.keyboard.once('keydown', (event) => {
+      if (event.key !== 'Escape') {
+        this.scene.start('Game');
+      }
+    });
+  }
+}
+
+// =======================
+// MAIN GAME SCENE
+// =======================
+class GameScene extends Phaser.Scene {
+  constructor() {
+    super('Game');
+  }
+
+  preload() {
   // Bush sound effect
   this.load.audio('bush', 'assets/audio/bush.mp3');
   // Berry bush and berry assets
@@ -203,6 +433,7 @@ function preload() {
     frameHeight: 24
   });
   this.load.image('raindrop', 'assets/raindrop.png');
+  this.load.image('plusOne', 'assets/plusOne.png');
 
   // Player sprites
   this.load.spritesheet('spritesheet', 'assets/Sprite_Sheet.png', {
@@ -210,7 +441,7 @@ function preload() {
     frameHeight: 64
   });
   this.load.image('fire_player', 'assets/fire_player.png');
-
+  this.load.image('dead_player', 'assets/dead.png');
   // Fire sprites
   this.load.spritesheet('fire_spritesheet', 'assets/fire_sprite_sheet.png', {
     frameWidth: 64,
@@ -271,12 +502,14 @@ function preload() {
   // New audio
   this.load.audio('footsteps', 'assets/audio/footsteps.mp3');
   this.load.audio('rain', 'assets/audio/rain.mp3');
+  this.load.audio('death_scream', 'assets/audio/death_scream.mp3');
+  this.load.audio('end_music', 'assets/audio/end_music.mp3');
 }
 
 // =======================
 // CREATE SCENE
 // =======================
-function create() {
+  create() {
   // Reset game state when scene restarts
   gameState.health = 100;
   gameState.maxHealth = 100;
@@ -284,12 +517,14 @@ function create() {
   gameState.thirst = 50;
   gameState.gameOver = false;
   gameState.gameOverUI = null;
-  gameState.sticksCollected = 20;
+  gameState.nameSubmitted = false;
+  gameState.sticksCollected = 5;
   gameState.waterCollected = 0;
   gameState.score = 0;
-  gameState.gameTime = 6 * 60;
+  gameState.gameTime = 7 * 60;
   gameState.gameDay = 0;
-  gameState.dayStart = 6 * 60;
+  gameState.dayStart = 7 * 60;
+  gameState.buildCosts = { fire: 3, bucket: 5, shelter: 7 };
   gameState.fires = [];
   gameState.shelters = [];
   gameState.buckets = [];
@@ -393,7 +628,15 @@ function create() {
       tries++;
     } while (!isValidBerryBushPosition.call(gameState.scene, x, y) && tries < 20);
     if (tries >= 20) return null;
-    const bush = gameState.berryBushes.create(x, y, 'berry_bush', 0).setDepth(215).setScale(1);
+    const bush = gameState.berryBushes.create(x, y, 'berry_bush', 0).setScale(1);
+    
+    // Set depth based on y position (fire is at depth 212)
+    // Bush y range is h - 95 to h - 88, which is roughly 505 to 512
+    // Lower half (y < 508.5) gets depth < 212, upper half gets depth > 212
+    const midY = h - 91.5; // Midpoint of the bush y range
+    const bushDepth = y < midY ? 211 : 213; // Below midpoint = 211 (behind fire), above = 213 (in front)
+    bush.setDepth(bushDepth);
+    
     bush.refreshBody(); // Refresh static body after positioning
     bush.setData('berries', 10);
     bush.setData('regrowing', false);
@@ -414,43 +657,74 @@ function create() {
   const dayMinutes = 24 * 60;
   const stormDurationMin = 240; // min storm duration in minutes (10 real seconds at 24 min/sec speed)
   const stormDurationMax = 480; // max storm duration in minutes (20 real seconds)
-  const maxRainPerDay = 288; // 4.8 hours (20% of 24h, previously 10%)
-  // Precompute all storms for the day
+  // Rain increases 20% per day
   const scheduleStormsForDay = (dayStart) => {
-    let totalRain = 0;
-    let storms = [];
-    // Start scheduling from current time or beginning of day, whichever is later
-    let currentGameTime = gameState.gameTime || (6 * 60); // Default to 6am if not set
-    let time = Math.max(dayStart, currentGameTime) + Phaser.Math.Between(10, 60);
-    let dayEnd = dayStart + 24 * 60;
-
-    console.log('Scheduling storms for day starting at', dayStart, 'minutes, current time:', currentGameTime);
-    console.log('Storm duration min/max:', stormDurationMin, stormDurationMax);
-    console.log('Max rain per day:', maxRainPerDay);
-
-    while (totalRain < maxRainPerDay && time < dayEnd) {
-      let remainingRain = maxRainPerDay - totalRain;
-      // If not enough rain budget left for minimum storm, skip it
-      if (remainingRain < stormDurationMin) {
-        console.log('Not enough rain budget left:', remainingRain, '< min', stormDurationMin);
-        break;
-      }
-
-      let maxStorm = Math.min(stormDurationMax, remainingRain);
-      let stormLength = Phaser.Math.Between(stormDurationMin, maxStorm);
-
-      // Make sure storm doesn't go past end of day
-      if (time + stormLength > dayEnd) {
-        console.log('Storm would exceed day boundary, skipping');
-        break;
-      }
-
-      console.log('Creating storm:', 'start=', time, 'end=', time + stormLength, 'length=', stormLength);
-      storms.push({ start: time, end: time + stormLength });
-      totalRain += stormLength;
-      time += stormLength + Phaser.Math.Between(30, 120); // Gaps between storms
+    const dayNumber = Math.floor(dayStart / (24 * 60));
+    const dayLength = 24 * 60; // 24 hours * 60 minutes
+    
+    // Base storm time is 40% of day
+    const baseStormPercent = 0.40;
+    const mildnessFactor = ((Math.ceil(Math.random()*1+.5) <= 1 ? -1 : 1)); // Mildness factor to reduce storm variability
+    const stormVariance =  mildnessFactor * Math.random()*0.20;
+    const stormPercentThisDay = baseStormPercent + stormVariance;
+    
+    // Calculate total storm time for this day
+    let totalStormTime = stormPercentThisDay * dayLength;
+    
+    console.log(`Day ${dayNumber}: Storm percent ${(stormPercentThisDay * 100).toFixed(1)}%, Total storm time: ${totalStormTime.toFixed(1)} minutes`);
+    
+    // Determine number of storms (1-4)
+    const numStormsFloat = (Math.random() * 4);
+    const numStorms = Math.max(1, Math.ceil(numStormsFloat));
+    
+    console.log(`Number of storms: ${numStorms}`);
+    
+    // Calculate storm lengths
+    const stormLengths = [];
+    let remainingTime = totalStormTime;
+    
+    for (let i = numStorms; i > 1 ; i--) {
+      if(remainingTime > 0){
+      let stormLength = Math.random() * (remainingTime/i>stormDurationMin?remainingTime/i:stormDurationMin);
+      stormLength = (stormLength > remainingTime ? remainingTime / 3 : stormLength);
+      stormLengths.push(stormLength);
+      remainingTime -= stormLength;
+      console.log(`Storm ${i + 1} length: ${stormLength.toFixed(1)} minutes`);
     }
-    console.log('Total storms created:', storms.length, 'Total rain minutes:', totalRain);
+    else remainingTime =100;
+    }
+    
+    // Last storm gets remaining time (if > 0)
+    if (remainingTime > 0) {
+      stormLengths.push(remainingTime);
+      console.log(`Storm ${numStorms} length: ${remainingTime.toFixed(1)} minutes`);
+    }
+    
+    // Shuffle storm order randomly
+    for (let i = stormLengths.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [stormLengths[i], stormLengths[j]] = [stormLengths[j], stormLengths[i]];
+    }
+    console.log(`Storm Lengths: ${stormLengths.map(l => l.toFixed(1)).join(', ')}`);
+    
+    // Assign random start times for each storm throughout the day
+    const storms = stormLengths.map(length => {
+      const startTime = Math.random() * dayLength;
+      if(length + startTime > dayLength) length = dayLength - startTime; // Adjust length if it exceeds day end
+      return {
+        start: startTime,
+        end: startTime + length,
+        length: length
+      };
+    });
+    console.log(`Storm Times: ${storms.map(s => `(${s.start.toFixed(1)} - ${s.end.toFixed(1)})`).join(', ')}`);
+    // Sort by start time for easier processing
+    storms.sort((a, b) => a.start - b.start);
+    
+    console.log('Storm schedule:', storms.map((s, i) => 
+      `Storm ${i + 1}: ${s.start.toFixed(1)} - ${s.end.toFixed(1)} (${s.length.toFixed(1)} min)\n`
+    ).join(', '));
+    
     return storms;
   };
   gameState.scheduleStormsForDay = scheduleStormsForDay;
@@ -466,7 +740,7 @@ function create() {
   gameState.shelterPreviewFrame = 0;
   // Shelter has exactly 8 frames (0-7)
   gameState.shelterFrameCount = 8;
-  console.log('Shelter frame count set to:', gameState.shelterFrameCount);
+  
   const centerX = this.cameras.main.width / 2;
   const centerY = this.cameras.main.height / 2;
 
@@ -778,6 +1052,30 @@ function create() {
     { fontSize: '14px', fill: '#000000', fontStyle: 'bold' }
   ).setOrigin(0.5);
 
+  // Quit button (top right corner)
+  gameState.quitButton = this.add.text(w - 45, h/2 -170, 'Quit', {
+    fontSize: '24px',
+    fill: '#ffffff',
+    fontStyle: 'bold',
+    stroke: '#000000',
+    strokeThickness: 3,
+    padding: { x: 15, y: 8 }
+  }).setOrigin(0.5).setDepth(10000).setInteractive({ useHandCursor: true });
+  
+  gameState.quitButton.on('pointerover', () => {
+    gameState.quitButton.setColor('#ff0000');
+  });
+  
+  gameState.quitButton.on('pointerout', () => {
+    gameState.quitButton.setColor('#ffffff');
+  });
+  
+  gameState.quitButton.on('pointerdown', () => {
+    // Trigger game over by depleting health
+    // The game over screen will be shown in the update loop
+    gameState.health = 0;
+  });
+
   // Player temperature status (below health bar at top center)
   const tempStatusX = this.cameras.main.width - 130;
   const tempStatusY = 76; // Below health bar
@@ -819,7 +1117,7 @@ function create() {
 
   // Music controls (centered vertically on right wall)
   const musicControlsX = w * 0.975;
-  const musicControlsY = this.cameras.main.height / 2;
+  const musicControlsY = this.cameras.main.height / 2 - 90;
 
   // Play/Pause button
   gameState.musicPlayPauseButton = this.add.text(musicControlsX, musicControlsY - 30, '⏸', {
@@ -839,7 +1137,7 @@ function create() {
   });
 
   // Volume button
-  gameState.volumeButton = this.add.text(musicControlsX, musicControlsY + 30, '🔊', {
+  gameState.volumeButton = this.add.text(musicControlsX+5, musicControlsY + 30, '🔊', {
     fontSize: '28px',
     fill: '#000000',
     fontStyle: 'bold'
@@ -918,10 +1216,11 @@ function create() {
     fontStyle: 'bold'
   }).setOrigin(0.5, 0).setDepth(200).setVisible(false);
 
-  // Info text at bottom center (in platform, same level as check/x buttons)
-  const placementUIY = this.cameras.main.height - 45;
+  // Info text at same position as Temperature Stabilized (centerX, tempStatusY + 25)
+  // tempStatusY is already defined above as 76
+  const infoTextY = 100 + 50;
 
-  gameState.infoText = this.add.text(centerX, placementUIY + 5, '', {
+  gameState.infoText = this.add.text(centerX, infoTextY, '', {
     fontSize: '20px',
     fill: '#ffffff',
     fontStyle: 'bold',
@@ -929,16 +1228,19 @@ function create() {
     strokeThickness: 3
   }).setOrigin(0.5, 0.5).setDepth(300).setVisible(false);
 
+
+  
   // Colored check and x for build menu (positioned below infoText)
-  gameState.infoTextCheck = this.add.text(centerX - 160, placementUIY + 20, '✓ (Enter) ', {
+  gameState.infoTextCheck = this.add.text(centerX - 150 -10, infoTextY -15, '   ✓\n(Enter) ', {
     fontSize: '20px',
     fill: '#00ff00',
     fontStyle: 'bold',
     stroke: '#000000',
     strokeThickness: 3
   }).setOrigin(0.5, 0.5).setDepth(300).setVisible(false);
+  
 
-  gameState.infoTextX = this.add.text(centerX + 180, placementUIY + 20, '✗ (Backspace)', {
+  gameState.infoTextX = this.add.text(centerX + 170 + 17, infoTextY -15, '     ✗\n(Backspace)', {
     fontSize: '20px',
     fill: '#ff0000',
     fontStyle: 'bold',
@@ -947,6 +1249,7 @@ function create() {
   }).setOrigin(0.5, 0.5).setDepth(300).setVisible(false);
 
   // Placement confirmation buttons (hidden by default, shown during placement)
+  const placementUIY = this.cameras.main.height - 45;
 
   gameState.checkButton = this.add.text(centerX, placementUIY, '✓', {
     fontSize: '30px',
@@ -962,7 +1265,6 @@ function create() {
 
   // Register button event listeners ONCE here (not in icon handlers)
   gameState.checkButton.on('pointerdown', () => {
-    console.log('CHECK BUTTON CLICKED! buildMode:', gameState.buildMode, 'sticks:', gameState.sticksCollected);
     if (gameState.buildMode === 'fire' && gameState.sticksCollected >= 3) {
       // Deduct branches
       gameState.sticksCollected -= gameState.buildCosts.fire;
@@ -980,6 +1282,12 @@ function create() {
       fire.body.setImmovable(true);
       fire.body.setSize(40, 40);
       fire.anims.play('fireBurn', true);
+      
+      // Store creation time and original Y for shrinking effect
+      fire.setData('createdAt', Date.now());
+      fire.setData('originalY', fire.y);
+      fire.setData('lifetime', 60000); // 60 seconds lifetime
+      
       gameState.fires.push(fire);
 
       // Play start fire sound (will chain to looping fire sound on complete)
@@ -1019,7 +1327,7 @@ function create() {
         bucket.y,
         '0%',
         { fontSize: '16px', fill: '#ffffff', fontStyle: 'bold', stroke: '#000000', strokeThickness: 3 }
-      ).setOrigin(0.5).setDepth(250);
+      ).setOrigin(0.5).setDepth(10001).setVisible(true);
       bucket.setData('fillText', fillText);
 
       // Store bucket for rain collection
@@ -1039,8 +1347,6 @@ function create() {
       gameState.checkButton.setVisible(false);
       gameState.xButton.setVisible(false);
     } else if (gameState.buildMode === 'shelter' && gameState.sticksCollected >= 7) {
-      console.log('Shelter build block entered');
-      console.log('Passed resource check, about to create shelter sprite');
       // Deduct branches
       gameState.sticksCollected -= gameState.buildCosts.shelter;
       gameState.stickText.setText(`${gameState.sticksCollected}`);
@@ -1051,21 +1357,13 @@ function create() {
         gameState.placementItem.y,
         'shelter', 0
       ).setScale(1).setDepth(210);
-      
-      console.log('CHECKPOINT 1: Shelter sprite created');
 
       this.physics.world.enable(shelter);
-      console.log('CHECKPOINT 2: Physics enabled');
       shelter.body.setAllowGravity(false);
       shelter.body.setImmovable(true);
       shelter.body.setSize(128, 128, false);
       shelter.body.setOffset(0, 0);
       shelter.body.isCircle = false;
-      console.log('CHECKPOINT 3: Body configured');
-      console.log('Shelter body size:', shelter.body.width, shelter.body.height);
-      console.log('CHECKPOINT 4: About to log shelter position');
-      console.log('Shelter sprite position:', shelter.x, shelter.y);
-      console.log('CHECKPOINT 5: Logged shelter position');
       
       // Create shade visual under the shelter (rectangle like tree shade)
       // Shelter sprite Y is at center, so we need to position shade below it
@@ -1077,8 +1375,6 @@ function create() {
       shelterShade.fillStyle(0x000000, 0.4); // Dark semi-transparent
       shelterShade.fillRect(shelterShadeX, shelterShadeY, shelterShadeW, shelterShadeH);
       shelterShade.setDepth(205); // Below shelter
-      console.log('Shelter shade placed at X:', shelterShadeX, 'Y:', shelterShadeY, 'Width:', shelterShadeW, 'Height:', shelterShadeH, 'Depth:', 205);
-      console.log('Shade was placed');
       
       // Store both shelter and its shade
       shelter.setData('shade', shelterShade);
@@ -1184,12 +1480,15 @@ function create() {
 
   // Player collects branches
   this.physics.add.overlap(gameState.player, gameState.branches, (player, branch) => {
-    if (!gameState.isClimbing && branch.getData('collectable')) {
+    if (!gameState.isClimbing && !gameState.buildMode && !gameState.buildMenuOpen && branch && branch.active && branch.getData('collectable')) {
       branch.destroy();
       // Branches are worth the current level
       gameState.sticksCollected += gameState.level;
       gameState.stickText.setText(`${gameState.sticksCollected}`);
       gameState.pickUpItemSound.play();
+      
+      // Show +1 animations above player (one for each branch picked up)
+      showPlusOne(gameState.scene, gameState.player.x, gameState.player.y, gameState.level);
 
       // Track branch pickups with time window
       const currentTime = this.time.now;
@@ -1295,7 +1594,6 @@ function create() {
     if (gameState.sticksCollected >= 7 && !gameState.buildMode) {
       gameState.buildMode = 'shelter';
       gameState.shelterPreviewFrame = 0;
-      console.log('Shelter frame count:', gameState.shelterFrameCount);
       showInfoText('Shelter frames: ' + gameState.shelterFrameCount, 3000);
       // Create placement preview (shelter is 128x128, so position it higher to be flush with platform)
       const shelterY = this.cameras.main.height - (64 + 60); // Half height of shelter (64) + platform offset (60)
@@ -1393,7 +1691,7 @@ function create() {
 // =======================
 // UPDATE LOOP
 // =======================
-function update(time, delta) {
+  update(time, delta) {
   // Always enable gravity for player unless climbing
   if (!gameState.isClimbing && gameState.player.body.allowGravity === false) {
     gameState.player.body.setAllowGravity(true);
@@ -1406,7 +1704,6 @@ function update(time, delta) {
   if (gameState.buildMode === 'shelter' && gameState.placementItem) {
     if (Phaser.Input.Keyboard.JustDown(gameState.cursors.up) || Phaser.Input.Keyboard.JustDown(gameState.wKey)) {
       gameState.shelterPreviewFrame = (gameState.shelterPreviewFrame + 1) % gameState.shelterFrameCount;
-      console.log('Cycled to frame:', gameState.shelterPreviewFrame, '(of', gameState.shelterFrameCount, 'total)');
       gameState.placementItem.setFrame(gameState.shelterPreviewFrame);
     }
   }
@@ -1441,7 +1738,6 @@ function update(time, delta) {
     if (now - gameState.lastHungerThirstTick >= 500) {
       if (gameState.isMelting == true) {
         gameState.thirst = Math.max(0, gameState.thirst - 1);
-        console.log("isMelting");
       }
 
     }
@@ -1454,10 +1750,10 @@ function update(time, delta) {
 
 
   // --- HUNGER & THIRST UI COLOR ---
-  // Determine day/night for UI coloring (night: 6pm-6am)
+  // Determine day/night for UI coloring (night: 7pm-7am)
   const hourOfDayUI = ((gameState.gameTime || 0) % (24 * 60)) / 60;
   // Night when before 6:00 or at/after 18:00
-  const isNightUI = (hourOfDayUI < 6) || (hourOfDayUI >= 18);
+  const isNightUI = (hourOfDayUI < 7) || (hourOfDayUI >= 19);
   const uiTextColor = isNightUI ? '#ffffff' : '#000000';
 
   // Thirst (water drop) - color thresholds:
@@ -1639,7 +1935,7 @@ function update(time, delta) {
   });
 
   // Berry picking interaction: use up arrow when overlapping
-  if ((Phaser.Input.Keyboard.JustDown(gameState.cursors.up) || Phaser.Input.Keyboard.JustDown(gameState.wKey)) && !gameState.buildMode) {
+  if ((Phaser.Input.Keyboard.JustDown(gameState.cursors.up) || Phaser.Input.Keyboard.JustDown(gameState.wKey)) && !gameState.buildMode && !gameState.buildMenuOpen) {
     gameState.berryBushes.getChildren().forEach(bush => {
       if (!bush.getData('regrowing') && bush.getData('berries') > 0) {
         const dist = Phaser.Math.Distance.Between(
@@ -1770,6 +2066,9 @@ function update(time, delta) {
         // Add to inventory (increase hunger by 1)
         gameState.hunger = Math.min(gameState.hunger + 1, gameState.maxHunger);
         showInfoText('You picked a berry! (+1 hunger)', 1200);
+        
+        // Show +1 animation above player
+        showPlusOne(gameState.scene, gameState.player.x, gameState.player.y, 1);
       }
     }
   });
@@ -1781,42 +2080,88 @@ function update(time, delta) {
   if (gameState.lastDayChecked !== day) {
     gameState.rainMinutesToday = 0;
     gameState.lastDayChecked = day;
-    const dayStart = day * 24 * 60;
+    const dayStart = 0 + day * 24 * 60;
     gameState.stormSchedule = gameState.scheduleStormsForDay(dayStart);
 
-    gameState.stormIndex = 0;
-  }
-  // Check if we should start or end a storm based on the schedule
-  let nextStorm = gameState.stormSchedule[gameState.stormIndex];
-  if (nextStorm && gameState.gameTime >= nextStorm.start && gameState.gameTime < nextStorm.end) {
+    // Only reset storm index if no storm is currently active
+    // This allows storms to continue across day boundaries
     if (!gameState.stormActive) {
-      gameState.stormActive = true;
-      gameState.stormStrength = Math.random();
-      gameState.nextStormTime = nextStorm.start;
-      gameState.stormEndTime = nextStorm.end;
+      gameState.stormIndex = 0;
     }
-  } else if (nextStorm && gameState.gameTime >= nextStorm.end) {
-    if (gameState.stormActive) {
+  }
+
+  // Check if we should start or end a storm based on the schedule
+  // Use time within current day for storm comparison
+  const timeInDay = (gameState.gameTime - gameState.dayStart) % (24 * 60);
+  let nextStorm = gameState.stormSchedule[gameState.stormIndex];
+  
+  // If storm is active, don't interrupt it when day changes
+  if (gameState.stormActive) {
+    // Storm continues until it naturally ends
+    const stormTotal = gameState.stormEndTime - gameState.nextStormTime;
+    let elapsedInStorm = timeInDay - gameState.nextStormTime;
+    
+    // Handle wrap-around for storms that cross midnight (e.g., start at 1400, end at 100)
+    if (elapsedInStorm < 0) {
+      elapsedInStorm += 24 * 60; // Add full day to handle negative wrap
+    }
+    
+    // Check if storm should end
+    if (elapsedInStorm >= stormTotal) {
       gameState.stormActive = false;
       gameState.isRaining = false;
       gameState.stormStrength = 0;
       let rainThisStorm = gameState.stormEndTime - gameState.nextStormTime;
       if (rainThisStorm > 0) gameState.rainMinutesToday += rainThisStorm;
+      gameState.stormIndex++;
     }
-    gameState.stormIndex++;
+  } else if (nextStorm) {
+    // Check if we should start this storm (handle wrap-around)
+    let shouldStart = false;
+    
+    if (nextStorm.end > nextStorm.start) {
+      // Normal case: storm doesn't cross midnight
+      shouldStart = timeInDay >= nextStorm.start && timeInDay < nextStorm.end;
+    } else {
+      // Storm crosses midnight (e.g., starts at 1400, ends at 100)
+      shouldStart = timeInDay >= nextStorm.start || timeInDay < nextStorm.end;
+    }
+    
+    if (shouldStart) {
+      // Start new storm
+      gameState.stormActive = true;
+      gameState.stormStrength = Math.random();
+      gameState.nextStormTime = nextStorm.start;
+      gameState.stormEndTime = nextStorm.end;
+    } else if (timeInDay >= nextStorm.end && nextStorm.end > nextStorm.start) {
+      // Move to next scheduled storm (only if storm doesn't wrap)
+      gameState.stormIndex++;
+    }
   }
   // (rest of weather logic unchanged)
   if (gameState.stormActive) {
-    const stormTotal = gameState.stormEndTime - gameState.nextStormTime;
-    const timeLeft = gameState.stormEndTime - gameState.gameTime;
+    let stormTotal = gameState.stormEndTime - gameState.nextStormTime;
+    
+    // Handle wrap-around for storm duration calculation
+    if (stormTotal < 0) {
+      stormTotal += 24 * 60; // Add full day
+    }
+    
+    let elapsedInStorm = timeInDay - gameState.nextStormTime;
+    if (elapsedInStorm < 0) {
+      elapsedInStorm += 24 * 60; // Handle wrap
+    }
+    
+    const timeLeft = stormTotal - elapsedInStorm;
+    
     // Peter out over the last 3 real seconds (72 in-game minutes at 24 min/sec speed)
     const peterOutDuration = 72; // 3 seconds * 24 minutes/second = 72 minutes
     let petersOut = false;
-    if (timeLeft <= peterOutDuration) {
+    if (timeLeft <= peterOutDuration && timeLeft >= 0) {
       petersOut = true;
     }
     // Storm is active: smoothly vary strength
-    const t = (gameState.gameTime - gameState.nextStormTime) / stormTotal;
+    const t = elapsedInStorm / stormTotal;
     let base = 0.5 + 0.5 * Math.sin(t * Math.PI * 2 + Math.random() * 0.5);
     // Add a little random walk
     gameState.stormStrength += Phaser.Math.FloatBetween(-0.02, 0.02);
@@ -1899,6 +2244,11 @@ function update(time, delta) {
     gameState.buildMenuOpen = !gameState.buildMenuOpen;
 
     if (gameState.buildMenuOpen) {
+      // Stop player movement when opening build menu
+      if (gameState.player.body) {
+        gameState.player.body.setVelocityX(0);
+      }
+      
       // Build list of affordable items
       gameState.buildableItems = [];
       if (gameState.sticksCollected >= gameState.buildCosts.fire) {
@@ -2015,6 +2365,16 @@ function update(time, delta) {
       const itemName = gameState.buildableItems[gameState.buildMenuSelection].type === 'fire' ? 'Fire' :
         gameState.buildableItems[gameState.buildMenuSelection].type === 'bucket' ? 'Bucket' : 'Shelter';
       showBuildMenuText(itemName, gameState.buildableItems[gameState.buildMenuSelection].cost);
+    }
+
+    // Backspace key to cancel build menu
+    if (Phaser.Input.Keyboard.JustDown(gameState.backspaceKey)) {
+      // Close build menu
+      gameState.buildMenuOpen = false;
+      gameState.buildFireIcon.setScale(0.4);
+      gameState.buildBucketIcon.setScale(0.4);
+      gameState.buildShelterIcon.setScale(0.2);
+      hideBuildMenuText();
     }
 
     // Enter key to build selected item
@@ -2236,6 +2596,12 @@ function update(time, delta) {
         fire.body.setImmovable(true);
         fire.body.setSize(40, 40);
         fire.anims.play('fireBurn', true);
+        
+        // Store creation time and original Y for shrinking effect
+        fire.setData('createdAt', Date.now());
+        fire.setData('originalY', fire.y);
+        fire.setData('lifetime', 60000); // 60 seconds lifetime
+        
         gameState.fires.push(fire);
 
         // Play start fire sound (will chain to looping fire sound on complete)
@@ -2252,12 +2618,33 @@ function update(time, delta) {
         gameState.checkButton.setVisible(false);
         gameState.xButton.setVisible(false);
       } else if (gameState.buildMode === 'bucket' && gameState.sticksCollected >= 5) {
-        // Deduct branches
-        gameState.sticksCollected -= gameState.buildCosts.bucket;
-        gameState.stickText.setText(`${gameState.sticksCollected}`);
+        // Check if bucket would overlap with any shelter
+        const bucketX = gameState.placementItem.x;
+        const bucketY = gameState.placementItem.y;
+        let overlappingShelter = false;
 
-        // Create actual bucket at placement position
-        const bucket = gameState.scene.add.sprite(
+        for (const shelter of gameState.shelters) {
+          if (shelter && shelter.active) {
+            // Check if bucket X position is within shelter width (only check horizontal overlap)
+            if (Math.abs(bucketX - shelter.x) < 64) {
+              overlappingShelter = true;
+              break;
+            }
+          }
+        }
+
+        if (overlappingShelter) {
+          // Too close to shelter - show error message and don't place
+          showInfoText('Too close to shelter!', 2000);
+          // Don't deduct sticks, just exit without placing
+        } else {
+          // Valid placement - proceed with building
+          // Deduct branches
+          gameState.sticksCollected -= gameState.buildCosts.bucket;
+          gameState.stickText.setText(`${gameState.sticksCollected}`);
+
+          // Create actual bucket at placement position
+          const bucket = gameState.scene.add.sprite(
           gameState.placementItem.x,
           gameState.placementItem.y,
           'bucket_spritesheet',
@@ -2270,13 +2657,14 @@ function update(time, delta) {
         bucket.body.setSize(40, 40);
 
         // Add fill percentage data and text display
-        bucket.setData('fillPercent', 0);
+        bucket.setData('fillPercent', 0
+        );
         const fillText = gameState.scene.add.text(
           bucket.x,
           bucket.y,
           '0%',
           { fontSize: '16px', fill: '#ffffff', fontStyle: 'bold', stroke: '#000000', strokeThickness: 3 }
-        ).setOrigin(0.5).setDepth(210);
+        ).setOrigin(0.5).setDepth(1000);
         bucket.setData('fillText', fillText);
 
         // Store bucket for rain collection
@@ -2294,6 +2682,7 @@ function update(time, delta) {
         gameState.buildMode = null;
         gameState.checkButton.setVisible(false);
         gameState.xButton.setVisible(false);
+        }
       } else if (gameState.buildMode === 'shelter' && gameState.sticksCollected >= 7) {
         // Determine final placement coordinates.
         // If preview is currently snapped (temporary visual snap), place at the snapped preview coords.
@@ -2334,9 +2723,6 @@ function update(time, delta) {
         shelter.body.setSize(128, 128, false);
         shelter.body.setOffset(0, 0);
         shelter.body.isCircle = false;
-
-        console.log('Shelter body size:', shelter.body.width, shelter.body.height);
-        console.log('Shelter sprite position:', shelter.x, shelter.y);
 
         // Create shade visual under the shelter (trapezoid - wider at bottom)
         // If this is a stacked shelter, shade starts where ground shelter's shade ends
@@ -2379,7 +2765,6 @@ function update(time, delta) {
         }
         
         shelterShade.setDepth(209); // Just below shelter at 210
-        console.log('Shelter trapezoid shade placed at center:', shelter.x, 'Stacked:', isStacked);
         
         // Store shade with shelter
         shelter.setData('shade', shelterShade);
@@ -2400,11 +2785,11 @@ function update(time, delta) {
           const createTop = () => {
             const topPlatform = gameState.shelterPlatforms.create(
               shelter.x,
-              shelter.y - 64 + 12,
+              shelter.y - 64 + 19,
               'platform'
             );
             topPlatform.displayWidth = 128;
-            topPlatform.displayHeight = 24;
+            topPlatform.displayHeight = 19;
             topPlatform.setAlpha(0);
             topPlatform.setDepth(9999);
             topPlatform.refreshBody();
@@ -2412,11 +2797,11 @@ function update(time, delta) {
           
           const createLeft = () => {
             const leftWall = gameState.shelterPlatforms.create(
-              shelter.x - 64 + 12,
+              shelter.x - 64 + 19,
               shelter.y,
               'platform'
             );
-            leftWall.displayWidth = 24;
+            leftWall.displayWidth = 19;
             leftWall.displayHeight = 128;
             leftWall.setAlpha(0);
             leftWall.setDepth(9999);
@@ -2425,11 +2810,11 @@ function update(time, delta) {
           
           const createRight = () => {
             const rightWall = gameState.shelterPlatforms.create(
-              shelter.x + 64 - 12,
+              shelter.x + 64 - 19,
               shelter.y,
               'platform'
             );
-            rightWall.displayWidth = 24;
+            rightWall.displayWidth = 19;
             rightWall.displayHeight = 128;
             rightWall.setAlpha(0);
             rightWall.setDepth(9999);
@@ -2442,42 +2827,32 @@ function update(time, delta) {
               createTop();
               createLeft();
               createRight();
-              console.log('Shelter frame 0 - top, left, right walls');
               break;
             case 1: // Left, Top
               createLeft();
               createTop();
-              console.log('Shelter frame 1 - left, top walls');
               break;
             case 2: // Top, Right
               createTop();
               createRight();
-              console.log('Shelter frame 2 - top, right walls');
               break;
             case 3: // Only Top
-              createTop();
-              console.log('Shelter frame 3 - top only');
               break;
             case 4: // Left, Right
               createLeft();
               createRight();
-              console.log('Shelter frame 4 - left, right walls');
               break;
             case 5: // No platforms
-              console.log('Shelter frame 5 - no collision');
               break;
             case 6: // Only Left
               createLeft();
-              console.log('Shelter frame 6 - left wall only');
               break;
             case 7: // Only Right
               createRight();
-              console.log('Shelter frame 7 - right wall only');
               break;
             default:
               // Default to top platform only for any additional frames
               createTop();
-              console.log('Shelter frame', shelterFrame, '- default top platform');
               break;
           }
         }
@@ -2517,181 +2892,146 @@ function update(time, delta) {
   // -----------------
   // RAIN & BUCKET WATER COLLECTION
   // -----------------
-  // Check raindrop collisions with player (resets temperature)
-  gameState.raindrops.getChildren().forEach(raindrop => {
-    if (raindrop && raindrop.active) {
-      const distanceToPlayer = Phaser.Math.Distance.Between(
-        raindrop.x,
-        raindrop.y,
-        gameState.player.x,
-        gameState.player.y
-      );
+  // Check raindrop collisions (optimized - only during storms)
+  if (gameState.isRaining) {
+    const raindrops = gameState.raindrops.getChildren();
+    
+    for (let i = raindrops.length - 1; i >= 0; i--) {
+      const raindrop = raindrops[i];
+      if (!raindrop || !raindrop.active) continue;
+      
+      let raindropDestroyed = false;
+      
+      // Check player collision first (quick bounds check)
+      if (!raindropDestroyed && Math.abs(raindrop.x - gameState.player.x) < 40 && Math.abs(raindrop.y - gameState.player.y) < 40) {
+        const distanceToPlayer = Phaser.Math.Distance.Between(raindrop.x, raindrop.y, gameState.player.x, gameState.player.y);
 
-      if (distanceToPlayer < 30) { // Collision with player
-        raindrop.destroy();
+        if (distanceToPlayer < 30) {
+          raindrop.destroy();
+          raindropDestroyed = true;
 
-        // Calculate new temperature when drinking water
-        // Apply base temperature change
-        let newTemp;
-        if (gameState.playerTemp >= 95) {
-          newTemp = 94;
-        } else if (gameState.playerTemp <= 55) {
-          newTemp = 56;
-        } else {
-          newTemp = gameState.temperature;
+          // Calculate new temperature
+          let newTemp;
+          if (gameState.playerTemp >= 95) newTemp = 94;
+          else if (gameState.playerTemp <= 55) newTemp = 56;
+          else newTemp = gameState.temperature;
+
+          // Re-apply shade and fire modifiers
+          const tempPlayerBounds = gameState.player.getBounds();
+          const tempTrunkBounds = gameState.treeTrunk.getBounds();
+          const underTree = Phaser.Geom.Intersects.RectangleToRectangle(tempPlayerBounds, tempTrunkBounds);
+          
+          let underShelter = false;
+          if (gameState.shelters && gameState.shelters.length > 0) {
+            for (const shelter of gameState.shelters) {
+              if (shelter.active && Phaser.Geom.Intersects.RectangleToRectangle(tempPlayerBounds, shelter.getBounds())) {
+                underShelter = true;
+                break;
+              }
+            }
+          }
+
+          if (underTree || underShelter) newTemp -= 5;
+          if (gameState.nearFire && closestFireDistance < playerBodyLength * 2) {
+            const distanceInWidths = closestFireDistance / playerBodyLength;
+            if (distanceInWidths > 1 && distanceInWidths <= 2) newTemp += 7;
+          }
+
+          gameState.playerTemp = newTemp;
+          gameState.thirst = Math.min(gameState.thirst + 1, gameState.maxThirst);
+          gameState.waterText.setText(`${gameState.thirst}`);
+          gameState.gulpSound.play();
+          
+          showPlusOne(gameState.scene, gameState.player.x, gameState.player.y, 1);
+
+          gameState.tempStatusMessage.setText('Temperature Stabilized');
+          gameState.tempStatusMessage.setVisible(!gameState.buildMode && !gameState.buildMenuOpen);
+          gameState.scene.time.delayedCall(2000, () => {
+            gameState.tempStatusMessage.setVisible(false);
+          });
         }
+      }
 
-        // Re-apply shade and fire modifiers on top of the new base temp
-        const tempPlayerBounds = gameState.player.getBounds();
-        const tempTrunkBounds = gameState.treeTrunk.getBounds();
-        const underTree = Phaser.Geom.Intersects.RectangleToRectangle(tempPlayerBounds, tempTrunkBounds);
-        
-        // Check if player is under any shelter
-        let underShelter = false;
-        if (gameState.shelters && gameState.shelters.length > 0) {
-          for (const shelter of gameState.shelters) {
-            if (shelter.active && Phaser.Geom.Intersects.RectangleToRectangle(tempPlayerBounds, shelter.getBounds())) {
-              underShelter = true;
+      // Check shelter collision
+      if (!raindropDestroyed) {
+        for (let j = 0; j < gameState.shelters.length; j++) {
+          const shelter = gameState.shelters[j];
+          if (shelter && shelter.active && Math.abs(raindrop.x - shelter.x) < 80 && Math.abs(raindrop.y - shelter.y) < 80) {
+            const dist = Phaser.Math.Distance.Between(raindrop.x, raindrop.y, shelter.x, shelter.y);
+            if (dist < 40) {
+              raindrop.destroy();
+              raindropDestroyed = true;
               break;
             }
           }
         }
-
-        if (underTree || underShelter) {
-          newTemp -= 5; // Shade effect
-        }
-
-        if (gameState.nearFire && closestFireDistance < playerBodyLength * 2) {
-          const distanceInWidths = closestFireDistance / playerBodyLength;
-          if (distanceInWidths > 1 && distanceInWidths <= 2) {
-            newTemp += 7; // Fire effect
-          }
-        }
-
-        gameState.playerTemp = newTemp;
-
-        // Add 1 to thirst when rain hits player
-        gameState.thirst = Math.min(gameState.thirst + 1, gameState.maxThirst);
-        gameState.waterText.setText(`${gameState.thirst}`);
-        gameState.gulpSound.play(); // Play gulp sound when rain hits player
-
-        // Show temperature stabilized message below temp status
-        gameState.tempStatusMessage.setText('Temperature Stabilized');
-        gameState.tempStatusMessage.setVisible(true);
-        gameState.scene.time.delayedCall(2000, () => {
-          gameState.tempStatusMessage.setVisible(false);
-        });
       }
 
-      // Check raindrop collision with shelters (destroys rain)
-      let raindropDestroyed = false;
-      gameState.shelters.forEach(shelter => {
-        if (shelter && shelter.active && !raindropDestroyed) {
-          const distanceToShelter = Phaser.Math.Distance.Between(
-            raindrop.x,
-            raindrop.y,
-            shelter.x,
-            shelter.y
-          );
-
-          if (distanceToShelter < 40) { // Collision with shelter
-            raindrop.destroy();
-            if (gameState.raindrops && gameState.raindrops.contains(raindrop)) {
-              gameState.raindrops.remove(raindrop, true, true);
-            }
-            // If you have a trail/particle effect, stop or destroy it here
-            raindropDestroyed = true;
-          }
-        }
-      });
-
-      // Check raindrop collision with fires (puts them out) - only if not already destroyed by shelter
+      // Check fire collision
       if (!raindropDestroyed) {
-        gameState.fires.forEach(fire => {
-          if (fire && fire.active) {
-            const distanceToFire = Phaser.Math.Distance.Between(
-              raindrop.x,
-              raindrop.y,
-              fire.x,
-              fire.y
-            );
-
-            if (distanceToFire < 30) { // Collision with fire
+        for (let k = 0; k < gameState.fires.length; k++) {
+          const fire = gameState.fires[k];
+          if (fire && fire.active && Math.abs(raindrop.x - fire.x) < 40 && Math.abs(raindrop.y - fire.y) < 40) {
+            const dist = Phaser.Math.Distance.Between(raindrop.x, raindrop.y, fire.x, fire.y);
+            if (dist < 30) {
               raindrop.destroy();
               fire.destroy();
 
-              // Play fire out sound if it exists
-              if (gameState.fireOutSound) {
-                gameState.fireOutSound.play();
-              }
+              if (gameState.fireOutSound) gameState.fireOutSound.play();
 
-              // Remove fire from array
               const fireIndex = gameState.fires.indexOf(fire);
-              if (fireIndex > -1) {
-                gameState.fires.splice(fireIndex, 1);
-              }
+              if (fireIndex > -1) gameState.fires.splice(fireIndex, 1);
 
-              // Stop fire sound if no fires remain
-              if (gameState.fires.length === 0) {
-                gameState.fireSound.stop();
-              }
-            }
-          }
-        });
-      }
-    }
-  });
-
-  // Check raindrop collisions with buckets
-  gameState.buckets.forEach(bucket => {
-    if (bucket && bucket.active) {
-      gameState.raindrops.getChildren().forEach(raindrop => {
-        if (raindrop && raindrop.active) {
-          // Check if raindrop is within bucket bounds
-          const distance = Phaser.Math.Distance.Between(
-            raindrop.x,
-            raindrop.y,
-            bucket.x,
-            bucket.y
-          );
-
-          if (distance < 30) { // Collision threshold
-            raindrop.destroy();
-            gameState.waterDropSound.play(); // Play water drop sound when rain hits bucket
-
-            // Add 10 directly to thirst inventory when rain hits bucket
-            gameState.thirst = Math.min(gameState.thirst + 10, gameState.maxThirst);
-            gameState.waterText.setText(`${gameState.thirst}`);
-
-            // Increase fill percentage for visual feedback
-            let fillPercent = bucket.getData('fillPercent') || 0;
-            fillPercent = Math.min(fillPercent + 10, 100); // Add 10%, max 100%
-            bucket.setData('fillPercent', fillPercent);
-
-            // Update bucket sprite based on fill level (frames 0-4)
-            if (fillPercent >= 100) {
-              bucket.setFrame(4); // Full bucket (frame 4)
-              fillPercent = 0; // Reset for next fill
-              bucket.setData('fillPercent', 0);
-              bucket.setFrame(0); // Reset to empty (frame 0)
-            } else if (fillPercent >= 75) {
-              bucket.setFrame(3); // 75% full
-            } else if (fillPercent >= 50) {
-              bucket.setFrame(2); // 50% full
-            } else if (fillPercent >= 25) {
-              bucket.setFrame(1); // 25% full
-            } else {
-              bucket.setFrame(0); // Empty
-            }
-
-            // Update percentage text
-            const fillText = bucket.getData('fillText');
-            if (fillText) {
-              fillText.setText(`${fillPercent}%`);
+              if (gameState.fires.length === 0) gameState.fireSound.stop();
+              
+              raindropDestroyed = true;
+              break;
             }
           }
         }
-      });
+      }
+      
+      // Check bucket collision
+      if (!raindropDestroyed && gameState.buckets.length > 0) {
+        for (let m = 0; m < gameState.buckets.length; m++) {
+          const bucket = gameState.buckets[m];
+          if (bucket && bucket.active && Math.abs(raindrop.x - bucket.x) < 40 && Math.abs(raindrop.y - bucket.y) < 40) {
+            const dist = Phaser.Math.Distance.Between(raindrop.x, raindrop.y, bucket.x, bucket.y);
+            if (dist < 30) {
+              raindrop.destroy();
+              gameState.waterDropSound.play();
+
+              let fillPercent = bucket.getData('fillPercent');
+              fillPercent = Math.min(fillPercent + 10, 100);
+              bucket.setData('fillPercent', fillPercent);
+              
+              if (fillPercent >= 100) bucket.setFrame(4);
+              else if (fillPercent >= 75) bucket.setFrame(3);
+              else if (fillPercent >= 50) bucket.setFrame(2);
+              else if (fillPercent >= 25) bucket.setFrame(1);
+              else bucket.setFrame(0);
+
+              const fillText = bucket.getData('fillText');
+              if (fillText) {
+                fillText.setText(`${fillPercent}%`);
+                fillText.setVisible(true);
+                fillText.setDepth(10001);
+              }
+              
+              raindropDestroyed = true;
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  // Update bucket fill text positions even when not raining
+  gameState.buckets.forEach(bucket => {
+    if (bucket && bucket.active) {
+      const fillText = bucket.getData('fillText');
+      if (fillText) fillText.setPosition(bucket.x, bucket.y);
     }
   });
 
@@ -2729,6 +3069,7 @@ function update(time, delta) {
   if (!gameState.gameOver) {
     gameState.score += 1;
     gameState.scoreText.setText(`Score: ${gameState.score}`);
+    
   }
 
   // Display time in 12-hour format
@@ -2791,6 +3132,32 @@ function update(time, delta) {
 
   gameState.fires.forEach(fire => {
     if (fire && fire.active) {
+      // Shrink fire over time (like bushes shrink when picked)
+      const createdAt = fire.getData('createdAt');
+      const lifetime = fire.getData('lifetime') || 60000;
+      const elapsed = Date.now() - createdAt;
+      const lifePercent = 1 - Math.min(elapsed / lifetime, 1); // 1.0 at start, 0.0 at end
+      
+      // Scale from 1.0 to 0.7 (same as bushes)
+      const scaleValue = 0.7 + (lifePercent * 0.3);
+      fire.setScale(scaleValue);
+      
+      // Adjust Y position to keep bottom anchored (same as bushes)
+      const originalHeight = 64;
+      const newHeight = originalHeight * scaleValue;
+      const heightDifference = originalHeight - newHeight;
+      fire.y = fire.getData('originalY') + (heightDifference / 2);
+      
+      // Destroy fire when lifetime expires
+      if (elapsed >= lifetime) {
+        fire.destroy();
+        const fireIndex = gameState.fires.indexOf(fire);
+        if (fireIndex > -1) {
+          gameState.fires.splice(fireIndex, 1);
+        }
+        return;
+      }
+      
       const distance = Phaser.Math.Distance.Between(
         gameState.player.x,
         gameState.player.y,
@@ -2908,12 +3275,104 @@ function update(time, delta) {
   if (gameState.health <= 0) {
     gameState.health = 0;
 
+    
+      
+
     // Show Game Over screen
     if (!gameState.gameOver) {
       gameState.gameOver = true;
 
-      // Pause game physics
-      this.physics.pause();
+      // Stop background music
+      if (gameState.backgroundMusic && gameState.backgroundMusic.isPlaying) {
+        gameState.backgroundMusic.stop();
+      }
+
+      // If climbing, exit climbing state and let player fall
+      if (gameState.isClimbing) {
+        gameState.isClimbing = false;
+        if (gameState.player.body) {
+          gameState.player.body.setAllowGravity(true);
+        }
+      }
+
+      // Set death texture and stop animations
+      gameState.player.setTexture('dead_player');
+      if (gameState.player.anims) {
+        gameState.player.anims.stop();
+      }
+
+      // Play death scream
+      const deathScream = this.sound.add('death_scream');
+      deathScream.play();
+      
+      // Wait for death scream to finish, then show game over UI
+      deathScream.once('complete', () => {
+        // Start end music
+        gameState.endMusic = this.sound.add('end_music', { loop: true, volume: 0.5 });
+        gameState.endMusic.play();
+
+        // Pause game physics after falling
+        this.physics.pause();
+
+        // Hide all gameplay UI elements
+        if (gameState.levelText) gameState.levelText.setVisible(false);
+      if (gameState.timeText) gameState.timeText.setVisible(false);
+      if (gameState.tempText) gameState.tempText.setVisible(false);
+      if (gameState.dayText) gameState.dayText.setVisible(false);
+      if (gameState.stickIcon) gameState.stickIcon.setVisible(false);
+      if (gameState.stickText) gameState.stickText.setVisible(false);
+      if (gameState.waterIcon) gameState.waterIcon.setVisible(false);
+      if (gameState.waterText) gameState.waterText.setVisible(false);
+      if (gameState.berryIcon) gameState.berryIcon.setVisible(false);
+      if (gameState.berryText) gameState.berryText.setVisible(false);
+      if (gameState.healthBarBg) gameState.healthBarBg.setVisible(false);
+      if (gameState.healthBar) gameState.healthBar.setVisible(false);
+      if (gameState.healthBarBorder) gameState.healthBarBorder.setVisible(false);
+      if (gameState.healthText) gameState.healthText.setVisible(false);
+      if (gameState.playerTempBg) gameState.playerTempBg.setVisible(false);
+      if (gameState.playerTempText) gameState.playerTempText.setVisible(false);
+      if (gameState.tempStatusMessage) gameState.tempStatusMessage.setVisible(false);
+      if (gameState.infoText) gameState.infoText.setVisible(false);
+      if (gameState.infoTextCheck) gameState.infoTextCheck.setVisible(false);
+      if (gameState.infoTextX) gameState.infoTextX.setVisible(false);
+      if (gameState.bButton) gameState.bButton.setVisible(false);
+      if (gameState.buildMenuText) gameState.buildMenuText.setVisible(false);
+      if (gameState.scoreText) gameState.scoreText.setVisible(false);
+      if (gameState.quitButton) gameState.quitButton.setVisible(false);
+      if (gameState.musicPlayPauseButton) gameState.musicPlayPauseButton.setVisible(false);
+      if (gameState.volumeButton) gameState.volumeButton.setVisible(false);
+      if (gameState.checkButton) gameState.checkButton.setVisible(false);
+      if (gameState.xButton) gameState.xButton.setVisible(false);
+      if (gameState.placementItem) gameState.placementItem.setVisible(false);
+      if (gameState.placementArrowLeft) gameState.placementArrowLeft.setVisible(false);
+      if (gameState.placementArrowRight) gameState.placementArrowRight.setVisible(false);
+      if (gameState.placementArrowUp) gameState.placementArrowUp.setVisible(false);
+      if (gameState.buildFireIcon) gameState.buildFireIcon.setVisible(false);
+      if (gameState.buildBucketIcon) gameState.buildBucketIcon.setVisible(false);
+      if (gameState.buildShelterIcon) gameState.buildShelterIcon.setVisible(false);
+      if (gameState.buildLabel) gameState.buildLabel.setVisible(false);
+
+      // Hide bucket fill percentage texts
+      if (gameState.buckets) {
+        gameState.buckets.forEach(bucket => {
+          const fillText = bucket.getData('fillText');
+          if (fillText) fillText.setVisible(false);
+        });
+      }
+
+      // Check if this score would make it into the visible top 10 or bottom 10
+      const allScores = loadHighScores();
+      
+      // Check if score makes top 10
+      const isNewHighScore = allScores.length < 10 || gameState.score > allScores[9].score;
+      
+      // Check if score makes bottom 10 (only if there are more than 10 scores)
+      let isNewLowScore = false;
+      if (allScores.length >= 10) {
+        // Check if it would be in the bottom 10
+        const bottomTenThreshold = allScores[allScores.length - 10].score;
+        isNewLowScore = gameState.score < bottomTenThreshold || allScores.length < 20;
+      }
 
       // Create dark overlay
       const overlay = this.add.rectangle(
@@ -2924,107 +3383,524 @@ function update(time, delta) {
         0x000000,
         0.7
       ).setDepth(10000);
+      
       //Score Text
       gameState.finalScoreText = this.add.text(
         this.cameras.main.width / 2,
-        this.cameras.main.height / 2 - 200,
+        this.cameras.main.height / 2 - 185,
         `${gameState.score} Points`,
         { fontSize: '64px', fill: '#000000', fontStyle: 'bold', stroke: '#ffffff', strokeThickness: 6 }
       ).setOrigin(0.5).setDepth(10001);
 
+      // Calculate player rank for display (add temporary entry to get rank)
+      const tempScores = [...allScores, { name: 'temp', score: gameState.score }];
+      tempScores.sort((a, b) => b.score - a.score);
+      const playerRank = tempScores.findIndex(s => s.name === 'temp' && s.score === gameState.score) + 1;
+      const totalPlayers = tempScores.length;
+
+      // Show rank text above score
+      const rankText = this.add.text(
+        this.cameras.main.width / 2,
+        this.cameras.main.height / 2 - 320,
+        `${playerRank} / ${totalPlayers}`,
+        { fontSize: '32px', fill: '#FF6B6B', fontStyle: 'bold', stroke: '#000000', strokeThickness: 4 }
+      ).setOrigin(0.5).setDepth(10001);
+
+      // Score indicator based on high/low score status
+      let highScoreText = null;
+      if (isNewHighScore && isNewLowScore) {
+        highScoreText = this.add.text(
+          this.cameras.main.width / 2,
+          this.cameras.main.height / 2 - 275,
+          '🏆 NEW HIGH AND LOW SCORE! 🏆',
+          { fontSize: '32px', fill: '#FFD700', fontStyle: 'bold', stroke: '#000000', strokeThickness: 4 }
+        ).setOrigin(0.5).setDepth(10001);
+      } else if (isNewHighScore) {
+        highScoreText = this.add.text(
+          this.cameras.main.width / 2,
+          this.cameras.main.height / 2 - 275,
+          '🏆 NEW HIGH SCORE! 🏆',
+          { fontSize: '32px', fill: '#FFD700', fontStyle: 'bold', stroke: '#000000', strokeThickness: 4 }
+        ).setOrigin(0.5).setDepth(10001);
+      } else if (isNewLowScore) {
+        highScoreText = this.add.text(
+          this.cameras.main.width / 2,
+          this.cameras.main.height / 2 - 275,
+          '💀 NEW LOW SCORE! 💀',
+          { fontSize: '32px', fill: '#FF6B6B', fontStyle: 'bold', stroke: '#000000', strokeThickness: 4 }
+        ).setOrigin(0.5).setDepth(10001);
+      }
+
+      // Display high scores list (left side) - top 10 from the main list
+      const highScores = loadHighScores();
+      const leftColumnX = this.cameras.main.width / 6;
+      const highScoreStartY = (this.cameras.main.height / 2 - 275);
+      let highScoreListY = highScoreStartY;
+      const highScoreListTexts = [];
+      
+      const titleText = this.add.text(
+        leftColumnX,
+        highScoreListY,
+        'HIGH SCORES',
+        { fontSize: '24px', fill: '#ffffff', fontStyle: 'bold', stroke: '#000000', strokeThickness: 3 }
+      ).setOrigin(0.5).setDepth(10001);
+      highScoreListTexts.push(titleText);
+      
+      highScoreListY += 35;
+      
+      // Create list with placeholder if player makes high score
+      const displayList = [...highScores];
+      if (isNewHighScore) {
+        displayList.push({ name: 'Your Name', score: gameState.score, isPlaceholder: true });
+        displayList.sort((a, b) => b.score - a.score);
+      }
+      
+      // Show top 10 (highest to lowest)
+      displayList.slice(0, 10).forEach((entry, index) => {
+        const scoreEntry = this.add.text(
+          leftColumnX,
+          highScoreListY + (index * 25),
+          `${index + 1}. ${entry.name.substring(0, 15)} - ${entry.score}`,
+          { 
+            fontSize: '18px', 
+            fill: entry.isPlaceholder ? '#FFD700' : '#ffffff', 
+            fontStyle: 'bold', 
+            stroke: '#000000', 
+            strokeThickness: 2 
+          }
+        ).setOrigin(0.5).setDepth(10001);
+        highScoreListTexts.push(scoreEntry);
+        
+        // Store reference to placeholder for updates
+        if (entry.isPlaceholder) {
+          gameState.highScorePlaceholder = scoreEntry;
+          gameState.highScorePlaceholderRank = index + 1;
+        }
+      });
+
+      // Display low scores list (right side) - bottom 10 from the same list (reversed)
+      const rightColumnX = this.cameras.main.width - (this.cameras.main.width / 6);
+      const lowScoreStartY = (this.cameras.main.height / 2 - 275);
+      let lowScoreListY = lowScoreStartY;
+      const lowScoreListTexts = [];
+      
+      const lowTitleText = this.add.text(
+        rightColumnX,
+        lowScoreListY,
+        'LOW SCORES',
+        { fontSize: '24px', fill: '#ffffff', fontStyle: 'bold', stroke: '#000000', strokeThickness: 3 }
+      ).setOrigin(0.5).setDepth(10001);
+      lowScoreListTexts.push(lowTitleText);
+      
+      lowScoreListY += 35;
+      
+      // Create list with placeholder if player makes low score
+      const displayListForLow = [...highScores];
+      if (isNewLowScore) {
+        displayListForLow.push({ name: 'Your Name', score: gameState.score, isPlaceholder: true });
+        displayListForLow.sort((a, b) => b.score - a.score);
+      }
+      
+      // Get bottom 10 entries (or all if less than 10), reversed to show lowest first
+      const bottomScores = displayListForLow.slice(-10).reverse();
+        
+      bottomScores.forEach((entry, index) => {
+        const actualRank = displayListForLow.length - index; // Count from the bottom
+        const scoreEntry = this.add.text(
+          rightColumnX,
+          lowScoreListY + (index * 25),
+          `${actualRank}. ${entry.name.substring(0, 15)} - ${entry.score}`,
+          { 
+            fontSize: '18px', 
+            fill: entry.isPlaceholder ? '#FF6B6B' : '#ffffff', 
+            fontStyle: 'bold', 
+            stroke: '#000000', 
+            strokeThickness: 2 
+          }
+        ).setOrigin(0.5).setDepth(10001);
+        lowScoreListTexts.push(scoreEntry);
+        
+        // Store reference to placeholder for updates
+        if (entry.isPlaceholder) {
+          gameState.lowScorePlaceholder = scoreEntry;
+          gameState.lowScorePlaceholderRank = actualRank;
+        }
+      });
+
       // Game Over text
       const gameOverText = this.add.text(
         this.cameras.main.width / 2,
-        this.cameras.main.height / 2 - 50,
+        this.cameras.main.height / 2 ,
         'GAME OVER',
         {
           fontSize: '64px',
-          fill: '#ff0000',
+          fill: '#ffffffff',
           fontStyle: 'bold',
           stroke: '#000000',
           strokeThickness: 6
         }
       ).setOrigin(0.5).setDepth(10001);
 
-      // Try Again button background
-      const buttonWidth = 200;
-      const buttonHeight = 60;
-      const buttonX = this.cameras.main.width / 2;
-      const buttonY = this.cameras.main.height / 2 + 50;
+      // Name input setup if high score
+      let nameInputBox = null;
+      let nameInputText = null;
+      let submitButton = null;
+      let submitButtonBg = null;
+      let submitButtonText = null;
+      let playerName = '';
 
-      const buttonBg = this.add.rectangle(
-        buttonX,
-        buttonY,
-        buttonWidth,
-        buttonHeight,
-        0x808080
-      ).setDepth(10001).setInteractive();
+      // Always show name input - everyone can submit their score
+      // Name prompt
+      const namePrompt = this.add.text(
+          this.cameras.main.width / 2,
+          this.cameras.main.height / 2 + 190,
+          'Enter your name:',
+          { fontSize: '24px', fill: '#ffffff', fontStyle: 'bold', stroke: '#000000', strokeThickness: 3 }
+        ).setOrigin(0.5).setDepth(10001);
 
-      // Button stroke
-      const buttonStroke = this.add.graphics();
-      buttonStroke.lineStyle(4, 0x000000, 1);
-      buttonStroke.strokeRect(
-        buttonX - buttonWidth / 2,
-        buttonY - buttonHeight / 2,
-        buttonWidth,
-        buttonHeight
-      );
-      buttonStroke.setDepth(10002);
+        // Input box background
+        nameInputBox = this.add.rectangle(
+          this.cameras.main.width / 2,
+          this.cameras.main.height / 2 + 230,
+          300,
+          40,
+          0xffffff
+        ).setDepth(10001);
 
-      // Try Again text
-      const buttonText = this.add.text(
-        buttonX,
-        buttonY,
-        'Try Again',
-        {
-          fontSize: '32px',
-          fill: '#000000',
-          fontStyle: 'bold'
-        }
-      ).setOrigin(0.5).setDepth(10003);
+        // Input text display
+        nameInputText = this.add.text(
+          this.cameras.main.width / 2,
+          this.cameras.main.height / 2 + 230,
+          '_',
+          { fontSize: '28px', fill: '#000000', fontStyle: 'bold' }
+        ).setOrigin(0.5).setDepth(10002);
 
-      // Store references for cleanup
-      gameState.gameOverUI = {
-        overlay,
-        finalScoreText: gameState.finalScoreText,
-        gameOverText,
-        buttonBg,
-        buttonStroke,
-        buttonText
+        // Submit button
+        submitButtonBg = this.add.rectangle(
+          this.cameras.main.width / 2 - 80,
+          this.cameras.main.height / 2 + 280,
+          150,
+          45,
+          0x00aa00
+        ).setDepth(10001).setInteractive({ useHandCursor: true });
+
+        submitButtonText = this.add.text(
+          this.cameras.main.width / 2 - 80,
+          this.cameras.main.height / 2 + 280,
+          'Submit',
+          { fontSize: '24px', fill: '#ffffff', fontStyle: 'bold' }
+        ).setOrigin(0.5).setDepth(10002);
+
+        // Skip button
+        const skipButtonBg = this.add.rectangle(
+          this.cameras.main.width / 2 + 80,
+          this.cameras.main.height / 2 + 280,
+          150,
+          45,
+          0x808080
+        ).setDepth(10001).setInteractive({ useHandCursor: true });
+
+        const skipButtonText = this.add.text(
+          this.cameras.main.width / 2 + 80,
+          this.cameras.main.height / 2 + 280,
+          'Skip',
+          { fontSize: '24px', fill: '#ffffff', fontStyle: 'bold' }
+        ).setOrigin(0.5).setDepth(10002);
+
+        // Skip button hover effects
+        skipButtonBg.on('pointerover', () => {
+          skipButtonBg.setFillStyle(0xa0a0a0);
+        });
+
+        skipButtonBg.on('pointerout', () => {
+          skipButtonBg.setFillStyle(0x808080);
+        });
+
+        // Skip button click - just show Try Again button without submitting
+        skipButtonBg.on('pointerdown', () => {
+          if (!gameState.nameSubmitted) {
+            gameState.nameSubmitted = true;
+            
+            // Remove placeholders from lists
+            if (gameState.highScorePlaceholder) {
+              gameState.highScorePlaceholder.destroy();
+              gameState.highScorePlaceholder = null;
+            }
+            if (gameState.lowScorePlaceholder) {
+              gameState.lowScorePlaceholder.destroy();
+              gameState.lowScorePlaceholder = null;
+            }
+            
+            // Hide name input elements
+            namePrompt.destroy();
+            nameInputBox.destroy();
+            nameInputText.destroy();
+            submitButtonBg.destroy();
+            submitButtonText.destroy();
+            skipButtonBg.destroy();
+            skipButtonText.destroy();
+            
+            // Show Try Again button without updating high scores
+            showTryAgainButton();
+          }
+        });
+
+        // Keyboard input handler
+        this.input.keyboard.on('keydown', function(event) {
+          if (!gameState.gameOver || gameState.nameSubmitted) return;
+          
+          if (event.key === 'Backspace' && playerName.length > 0) {
+            playerName = playerName.slice(0, -1);
+            nameInputText.setText(playerName || '_');
+          } else if (event.key === 'Enter' && playerName.length > 0) {
+            submitScore();
+          } else if (event.key.length === 1 && playerName.length < 15) {
+            playerName += event.key;
+            nameInputText.setText(playerName);
+          }
+          
+          // Update placeholders in real-time
+          const displayName = playerName || 'Your Name';
+          if (gameState.highScorePlaceholder) {
+            gameState.highScorePlaceholder.setText(
+              `${gameState.highScorePlaceholderRank}. ${displayName.substring(0, 15)} - ${gameState.score}`
+            );
+          }
+          if (gameState.lowScorePlaceholder) {
+            gameState.lowScorePlaceholder.setText(
+              `${gameState.lowScorePlaceholderRank}. ${displayName.substring(0, 15)} - ${gameState.score}`
+            );
+          }
+        });
+
+        const submitScore = () => {
+          if (playerName.length > 0 && !gameState.nameSubmitted) {
+            gameState.nameSubmitted = true;
+            
+            // Add to the main scores list
+            addHighScore(playerName, gameState.score);
+            
+            // Hide name input elements
+            namePrompt.destroy();
+            nameInputBox.destroy();
+            nameInputText.destroy();
+            submitButtonBg.destroy();
+            submitButtonText.destroy();
+            skipButtonBg.destroy();
+            skipButtonText.destroy();
+            
+            // Update high scores display (top 10)
+            const updatedScores = loadHighScores();
+            highScoreListTexts.forEach(t => t.destroy());
+            
+            const leftColumnX = this.cameras.main.width / 6;
+            const highScoreStartY = (this.cameras.main.height / 2 - 275);
+            let listY = highScoreStartY;
+            const titleText = this.add.text(
+              leftColumnX,
+              listY,
+              'HIGH SCORES',
+              { fontSize: '24px', fill: '#ffffff', fontStyle: 'bold', stroke: '#000000', strokeThickness: 3 }
+            ).setOrigin(0.5).setDepth(10001);
+            
+            listY += 35;
+            
+            // Show top 10 scores
+            updatedScores.slice(0, 10).forEach((entry, index) => {
+              const scoreEntry = this.add.text(
+                leftColumnX,
+                listY + (index * 25),
+                `${index + 1}. ${entry.name.substring(0, 15)} - ${entry.score}`,
+                { 
+                  fontSize: '18px', 
+                  fill: (entry.score === gameState.score && entry.name === playerName) ? '#FFD700' : '#ffffff', 
+                  fontStyle: 'bold', 
+                  stroke: '#000000', 
+                  strokeThickness: 2 
+                }
+              ).setOrigin(0.5).setDepth(10001);
+              
+              gameState.gameOverUI.highScoreListTexts.push(scoreEntry);
+            });
+            
+            gameState.gameOverUI.highScoreListTexts.push(titleText);
+            
+            // Update low scores display (bottom 10 from same list, reversed)
+            lowScoreListTexts.forEach(t => t.destroy());
+            
+            const rightColumnX = this.cameras.main.width - (this.cameras.main.width / 6);
+            const lowScoreStartY = (this.cameras.main.height / 2 - 275);
+            let lowListY = lowScoreStartY;
+            const lowTitleText = this.add.text(
+              rightColumnX,
+              lowListY,
+              'LOW SCORES',
+              { fontSize: '24px', fill: '#ffffff', fontStyle: 'bold', stroke: '#000000', strokeThickness: 3 }
+            ).setOrigin(0.5).setDepth(10001);
+            
+            lowListY += 35;
+            
+            // Get bottom 10 entries (or all if less than 10), reversed to show lowest first
+            const bottomScores = updatedScores.slice(-10).reverse();
+            
+            bottomScores.forEach((entry, index) => {
+              const actualRank = updatedScores.length - index; // Count from the bottom
+              const scoreEntry = this.add.text(
+                rightColumnX,
+                lowListY + (index * 25),
+                `${actualRank}. ${entry.name.substring(0, 15)} - ${entry.score}`,
+                { 
+                  fontSize: '18px', 
+                  fill: (entry.score === gameState.score && entry.name === playerName) ? '#FF6B6B' : '#ffffff', 
+                  fontStyle: 'bold', 
+                  stroke: '#000000', 
+                  strokeThickness: 2 
+                }
+              ).setOrigin(0.5).setDepth(10001);
+              
+              gameState.gameOverUI.lowScoreListTexts.push(scoreEntry);
+            });
+            
+            gameState.gameOverUI.lowScoreListTexts.push(lowTitleText);
+            
+            // Show Try Again button
+            showTryAgainButton();
+          }
+        };
+
+        submitButtonBg.on('pointerdown', submitScore);
+        
+        gameState.gameOverUI = {
+          overlay,
+          finalScoreText: gameState.finalScoreText,
+          highScoreText,
+          gameOverText,
+          namePrompt,
+          nameInputBox,
+          nameInputText,
+          submitButtonBg,
+          submitButtonText,
+          highScoreListTexts,
+          lowScoreListTexts
+        };
+
+      const showTryAgainButton = () => {
+        const buttonWidth = 200;
+        const buttonHeight = 60;
+        const buttonX = this.cameras.main.width / 2;
+        const buttonY = this.cameras.main.height / 2 + 260;
+
+        const buttonBg = this.add.rectangle(
+          buttonX,
+          buttonY,
+          buttonWidth,
+          buttonHeight,
+          0x808080
+        ).setDepth(10001).setInteractive();
+
+        // Button stroke
+        const buttonStroke = this.add.graphics();
+        buttonStroke.lineStyle(4, 0x000000, 1);
+        buttonStroke.strokeRect(
+          buttonX - buttonWidth / 2,
+          buttonY - buttonHeight / 2,
+          buttonWidth,
+          buttonHeight
+        );
+        buttonStroke.setDepth(10002);
+
+        // Try Again text
+        const buttonText = this.add.text(
+          buttonX,
+          buttonY,
+          'Try Again',
+          {
+            fontSize: '32px',
+            fill: '#000000',
+            fontStyle: 'bold'
+          }
+        ).setOrigin(0.5).setDepth(10003);
+
+        // Add button to gameOverUI
+        gameState.gameOverUI.buttonBg = buttonBg;
+        gameState.gameOverUI.buttonStroke = buttonStroke;
+        gameState.gameOverUI.buttonText = buttonText;
+
+        // Button hover effects
+        buttonBg.on('pointerover', () => {
+          buttonBg.setFillStyle(0xa0a0a0);
+        });
+
+        buttonBg.on('pointerout', () => {
+          buttonBg.setFillStyle(0x808080);
+        });
+
+        // Button click - restart game
+        buttonBg.on('pointerdown', () => {
+          // Stop all sounds before restarting
+          this.sound.stopAll();
+          this.scene.restart();
+        });
+
+        // Main Menu button (below Try Again)
+        const menuButtonY = buttonY + 80;
+        const menuButtonBg = this.add.rectangle(
+          buttonX,
+          menuButtonY,
+          buttonWidth,
+          buttonHeight,
+          0x404040
+        ).setDepth(10001).setInteractive({ useHandCursor: true });
+
+        const menuButtonStroke = this.add.graphics();
+        menuButtonStroke.lineStyle(4, 0x000000, 1);
+        menuButtonStroke.strokeRect(
+          buttonX - buttonWidth / 2,
+          menuButtonY - buttonHeight / 2,
+          buttonWidth,
+          buttonHeight
+        );
+        menuButtonStroke.setDepth(10002);
+
+        const menuButtonText = this.add.text(
+          buttonX,
+          menuButtonY,
+          'Main Menu',
+          {
+            fontSize: '24px',
+            fill: '#ffffff',
+            fontStyle: 'bold'
+          }
+        ).setOrigin(0.5).setDepth(10003);
+
+        // Menu button hover effects
+        menuButtonBg.on('pointerover', () => {
+          menuButtonBg.setFillStyle(0x606060);
+        });
+
+        menuButtonBg.on('pointerout', () => {
+          menuButtonBg.setFillStyle(0x404040);
+        });
+
+        // Menu button click - go to main menu
+        menuButtonBg.on('pointerdown', () => {
+          this.sound.stopAll();
+          this.scene.start('StartMenu');
+        });
+
+        // Add menu button to gameOverUI
+        gameState.gameOverUI.menuButtonBg = menuButtonBg;
+        gameState.gameOverUI.menuButtonStroke = menuButtonStroke;
+        gameState.gameOverUI.menuButtonText = menuButtonText;
       };
 
-      // Button click handler
-      buttonBg.on('pointerdown', () => {
-        // Destroy all game over UI elements
-        if (gameState.gameOverUI) {
-          gameState.gameOverUI.overlay.destroy();
-          gameState.gameOverUI.finalScoreText.destroy();
-          gameState.gameOverUI.gameOverText.destroy();
-          gameState.gameOverUI.buttonBg.destroy();
-          gameState.gameOverUI.buttonStroke.destroy();
-          gameState.gameOverUI.buttonText.destroy();
-          gameState.gameOverUI = null;
-        }
-
-        // Reset gameOver flag before restarting
-        gameState.gameOver = false;
-
-        // Resume physics before restarting
-        this.physics.resume();
-
-        // Restart the scene (this resets all game state)
-        this.scene.restart();
-      });
-
-      // Button hover effect
-      buttonBg.on('pointerover', () => {
-        buttonBg.setFillStyle(0x999999);
-      });
-
-      buttonBg.on('pointerout', () => {
-        buttonBg.setFillStyle(0x808080);
-      });
+      // Store references for cleanup (will be updated if showTryAgainButton is called)
+      if (!isNewHighScore) {
+        // Already shown, nothing more to track
+      }
+});
     }
+    
   }
   if (gameState.health > gameState.maxHealth) gameState.health = gameState.maxHealth;
 
@@ -3075,36 +3951,40 @@ function update(time, delta) {
 
   // Sky color transitions based on time
   let skyColor;
-  if (hourOfDay >= 5 && hourOfDay < 6) { // 5-6 AM: Sunrise (orange gradient)
-    const t = (hourOfDay - 5);
+  if (hourOfDay >= 6 && hourOfDay < 7) { // 6-7 AM: Sunrise (dark blue to orange)
+    const t = (hourOfDay - 6);
     skyColor = Phaser.Display.Color.Interpolate.ColorWithColor(
       Phaser.Display.Color.ValueToColor(0x1a1a3e), // Dark blue
       Phaser.Display.Color.ValueToColor(0xff8c42), // Orange
       1, t
     );
-  } else if (hourOfDay >= 6 && hourOfDay < 8) { // 6-8 AM: Morning (orange to blue)
-    const t = (hourOfDay - 6) / 2;
+  } else if (hourOfDay >= 7 && hourOfDay < 9) { // 7-9 AM: Morning (orange to blue)
+    const t = (hourOfDay - 7) / 2;
     skyColor = Phaser.Display.Color.Interpolate.ColorWithColor(
       Phaser.Display.Color.ValueToColor(0xff8c42), // Orange
       Phaser.Display.Color.ValueToColor(0x87ceeb), // Sky blue
       1, t
     );
-  } else if (hourOfDay >= 8 && hourOfDay < 17) { // 8 AM - 5 PM: Day (blue)
+  } else if (hourOfDay >= 9 && hourOfDay < 18) { // 9 AM - 6 PM: Day (blue)
     skyColor = Phaser.Display.Color.ValueToColor(0x87ceeb);
-  } else if (hourOfDay >= 17 && hourOfDay < 18) { // 5-6 PM: Sunset (blue to red)
-    const t = (hourOfDay - 17);
-    skyColor = Phaser.Display.Color.Interpolate.ColorWithColor(
-      Phaser.Display.Color.ValueToColor(0x87ceeb), // Sky blue
-      Phaser.Display.Color.ValueToColor(0xff6b6b), // Red
-      1, t
-    );
-  } else if (hourOfDay >= 18 && hourOfDay < 19) { // 6-7 PM: Dusk (red to purple)
+  } else if (hourOfDay >= 18 && hourOfDay < 19) { // 6-7 PM: Sunset (blue to red to purple)
     const t = (hourOfDay - 18);
-    skyColor = Phaser.Display.Color.Interpolate.ColorWithColor(
-      Phaser.Display.Color.ValueToColor(0xff6b6b), // Red
-      Phaser.Display.Color.ValueToColor(0x9b59b6), // Purple
-      1, t
-    );
+    // Blend through sunset colors in one hour
+    if (t < 0.5) {
+      // First half: blue to red
+      skyColor = Phaser.Display.Color.Interpolate.ColorWithColor(
+        Phaser.Display.Color.ValueToColor(0x87ceeb), // Sky blue
+        Phaser.Display.Color.ValueToColor(0xff6b6b), // Red
+        1, t * 2
+      );
+    } else {
+      // Second half: red to purple
+      skyColor = Phaser.Display.Color.Interpolate.ColorWithColor(
+        Phaser.Display.Color.ValueToColor(0xff6b6b), // Red
+        Phaser.Display.Color.ValueToColor(0x9b59b6), // Purple
+        1, (t - 0.5) * 2
+      );
+    }
   } else if (hourOfDay >= 19 && hourOfDay < 21) { // 7-9 PM: Twilight (purple to dark purple)
     const t = (hourOfDay - 19) / 2;
     skyColor = Phaser.Display.Color.Interpolate.ColorWithColor(
@@ -3112,10 +3992,10 @@ function update(time, delta) {
       Phaser.Display.Color.ValueToColor(0x2c1a4d), // Dark purple
       1, t
     );
-  } else if (hourOfDay >= 21 || hourOfDay < 4) { // 9 PM - 4 AM: Night (dark purple)
+  } else if (hourOfDay >= 21 || hourOfDay < 5) { // 9 PM - 5 AM: Night (dark purple)
     skyColor = Phaser.Display.Color.ValueToColor(0x2c1a4d);
-  } else if (hourOfDay >= 4 && hourOfDay < 5) { // 4-5 AM: Pre-dawn (dark purple to dark blue)
-    const t = (hourOfDay - 4);
+  } else if (hourOfDay >= 5 && hourOfDay < 6) { // 5-6 AM: Pre-dawn (dark purple to dark blue)
+    const t = (hourOfDay - 5);
     skyColor = Phaser.Display.Color.Interpolate.ColorWithColor(
       Phaser.Display.Color.ValueToColor(0x2c1a4d), // Dark purple
       Phaser.Display.Color.ValueToColor(0x1a1a3e), // Dark blue
@@ -3153,12 +4033,12 @@ function update(time, delta) {
 
   // Sun and Moon positioning (arc across sky)
 
-  if (hourOfDay >= 6 && hourOfDay < 18) { // Daytime: show sun
+  if (hourOfDay >= 7 && hourOfDay < 19) { // Daytime: show sun
     gameState.sun.setVisible(true);
     gameState.moon.setVisible(false);
 
     // Sun moves from left to right over 12 hours (6 AM to 6 PM)
-    const sunProgress = (hourOfDay - 6) / 12; // 0 to 1
+    const sunProgress = (hourOfDay - 7) / 12; // 0 to 1
     const sunX = screenWidth * sunProgress;
     const sunY = screenHeight * 0.2 - Math.sin(sunProgress * Math.PI) * screenHeight * 0.15; // Arc motion
     gameState.sun.setPosition(sunX, sunY);
@@ -3168,10 +4048,10 @@ function update(time, delta) {
 
     // Moon moves from left to right over 12 hours (6 PM to 6 AM)
     let moonProgress;
-    if (hourOfDay >= 18) {
-      moonProgress = (hourOfDay - 18) / 12;
+    if (hourOfDay >= 19) {
+      moonProgress = (hourOfDay - 19) / 12;
     } else {
-      moonProgress = (hourOfDay + 6) / 12;
+      moonProgress = (hourOfDay + 5) / 12;
     }
     const moonX = screenWidth * moonProgress;
     const moonY = screenHeight * 0.2 - Math.sin(moonProgress * Math.PI) * screenHeight * 0.15; // Arc motion
@@ -3193,11 +4073,12 @@ function update(time, delta) {
   }
 
   // Start climbing when at least 50% overlapping and pressing up
-  if (overlapPercent >= 0.75 && (gameState.cursors.up.isDown || gameState.wKey.isDown) && !gameState.isClimbing && !gameState.buildMode) {
+  if (overlapPercent >= 0.75 && (gameState.cursors.up.isDown || gameState.wKey.isDown) && !gameState.isClimbing && !gameState.buildMode && !gameState.pickingBerry) {
     gameState.isClimbing = true;
     // Snap player to center of tree trunk
     gameState.player.x = gameState.treeTrunk.x;
     gameState.player.setVelocityX(0); // Stop horizontal movement
+    gameState.player.setVelocityY(0); // Reset any existing velocity (e.g., from berry picking)
     // Disable gravity on the player's body while climbing to prevent drift
     if (gameState.player.body) gameState.player.body.setAllowGravity(false);
     gameState.player.setVelocityY(-200); // Start moving up immediately
@@ -3228,6 +4109,55 @@ function update(time, delta) {
     if (gameState.sawSustainLoop && gameState.sawSustainLoop.isPlaying) gameState.sawSustainLoop.stop();
     if (gameState.climbingSound && gameState.climbingSound.isPlaying) gameState.climbingSound.stop();
     gameState.sawSoundPlaying = false;
+  }
+
+  // Bucket drinking mechanic - drink from bucket when down is pressed near it
+  if ((gameState.cursors.down.isDown || gameState.sKey.isDown) && onGroundOrShelter && !gameState.isClimbing && !gameState.buildMode && !gameState.buildMenuOpen) {
+    if (!gameState.isDrinkingFromBucket) {
+      // Check if player is near any bucket with water
+      gameState.buckets.forEach(bucket => {
+        const distance = Phaser.Math.Distance.Between(
+          gameState.player.x,
+          gameState.player.y,
+          bucket.x,
+          bucket.y
+        );
+        const fillPercent = bucket.getData('fillPercent') || '0%';
+        if (distance < 80) { // Within range of bucket
+          
+          if (fillPercent > 0) {
+            gameState.isDrinkingFromBucket = true;
+            
+            // Add water to thirst inventory
+            gameState.thirst = Math.min(gameState.thirst + fillPercent, gameState.maxThirst);
+            gameState.waterText.setText(`${gameState.thirst}`);
+            
+            // Show +1 animations above player (one per water unit)
+            showPlusOne(gameState.scene, gameState.player.x, gameState.player.y, fillPercent);
+            
+            // Empty the bucket
+            bucket.setData('fillPercent', 0);
+            bucket.setFrame(0); // Reset to empty sprite
+            
+            // Update percentage text
+            const fillText = bucket.getData('fillText');
+            if (fillText) {
+              fillText.setText('0%');
+            }
+            
+            // Play gulp sound
+            if (gameState.gulpSound) {
+              gameState.gulpSound.play();
+            }
+            
+            // Reset flag after a delay
+            this.time.delayedCall(500, () => {
+              gameState.isDrinkingFromBucket = false;
+            });
+          }
+        }
+      });
+    }
   }
 
   // Jump mechanics (only when not climbing, not in build mode, and not in build menu)
@@ -3283,7 +4213,7 @@ function update(time, delta) {
 
         // Show temperature stabilized message below temp status
         gameState.tempStatusMessage.setText('Temperature Stabilized');
-        gameState.tempStatusMessage.setVisible(true);
+        gameState.tempStatusMessage.setVisible(!gameState.buildMode && !gameState.buildMenuOpen);
         gameState.scene.time.delayedCall(2000, () => {
           gameState.tempStatusMessage.setVisible(false);
         });
@@ -3423,11 +4353,11 @@ function update(time, delta) {
 
     // Calculate bottom third of tree (where player must stay centered)
     const treeBottom = gameState.treeTrunk.y + (gameState.treeTrunk.height / 2);
-    const bottomThirdHeight = treeBottom - (gameState.treeTrunk.height / 3);
+    const bottomThirdHeight = treeBottom - (gameState.treeTrunk.height / 4);
     const inBottomThird = gameState.player.y >= bottomThirdHeight;
 
-    // Only allow side positioning in top 2/3 of tree
-    if (!inBottomThird) {
+    // Only allow side positioning in top 2/3 of tree when NOT in build menu or build mode
+    if (!inBottomThird && !gameState.buildMenuOpen && !gameState.buildMode) {
       // Flip saw sprite and position based on direction while climbing
       if (gameState.cursors.left.isDown || gameState.aKey.isDown) {
         gameState.player.setFlipX(false); // Facing left
@@ -3437,7 +4367,7 @@ function update(time, delta) {
         gameState.player.x = gameState.treeTrunk.x + 20; // Offset to right side of trunk
       }
     } else {
-      // In bottom third - force center position
+      // In bottom third OR in build menu/mode - force center position
       gameState.player.x = gameState.treeTrunk.x;
     }
 
@@ -3540,7 +4470,7 @@ function update(time, delta) {
               closestBranch.setData('onTree', false); // Mark as cut from tree
               closestBranch.setData('beingCut', false); // Reset cutting flag
 
-              // Schedule regeneration after 10 seconds
+              // Schedule regeneration after 10 seconds (individual timer per branch)
               gameState.scene.time.delayedCall(gameState.branchRegenerationDelay * 1000, () => {
                 // Attempt to grow a branch
                 const attemptGrow = () => {
@@ -3549,12 +4479,8 @@ function update(time, delta) {
                     b.active && b.getData('onTree')
                   ).length;
 
-                  // Check if enough time has passed since last branch grew
-                  const currentTime = Date.now() / 1000;
-                  const timeSinceLastGrow = currentTime - gameState.lastBranchGrowTime;
-
-                  // Only regenerate if below max branches AND cooldown has passed
-                  if (branchesOnTree < gameState.maxBranches && timeSinceLastGrow >= gameState.branchGrowCooldown) {
+                  // Only regenerate if below max branches (no global cooldown)
+                  if (branchesOnTree < gameState.maxBranches) {
                     const availableHeight = gameState.treeTrunk.height * (2 / 3);
                     const minSpacing = 50;
                     const branchMargin = 20; // Keep branches below trunk top
@@ -3620,8 +4546,6 @@ function update(time, delta) {
                       } else {
                         newBranch.x -= gameState.treeTrunk.width;
                       }
-
-                      gameState.lastBranchGrowTime = currentTime;
 
                       // Growth routine: increase health by 1 every second until full
                       const growStep = () => {
@@ -3699,7 +4623,14 @@ function update(time, delta) {
       gameState.spacePressed = false;
     }
 
-    if ((gameState.cursors.up.isDown || gameState.wKey.isDown) && !atMaxHeight) {
+    // Pause climbing movement when in build mode or build menu
+    if (gameState.buildMode || gameState.buildMenuOpen) {
+      gameState.player.setVelocityY(0);
+      // Stop climbing sound when paused
+      if (gameState.climbingSound.isPlaying) {
+        gameState.climbingSound.stop();
+      }
+    } else if ((gameState.cursors.up.isDown || gameState.wKey.isDown) && !atMaxHeight) {
       gameState.player.setVelocityY(-200);
       // Play climbing sound if not already playing
       if (!gameState.climbingSound.isPlaying) {
@@ -3827,6 +4758,7 @@ function update(time, delta) {
     }
   }
 }
+}
 
 const config = {
   type: Phaser.AUTO,
@@ -3845,14 +4777,14 @@ const config = {
     arcade: {
       gravity: { y: 600 },
       enableBody: true,
-      //debug: true
+      debug: false
     }
   },
-  scene: {
-    preload,
-    create,
-    update
-  },
+  scene: [
+    StartMenuScene,
+    HowToPlayScene,
+    GameScene
+  ],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
