@@ -25,6 +25,7 @@ const gameState = {
   isMelting: false,
   gameOver: false,
   currentVelocityX: 0,
+  playerBodyLength: 64,
 
   // Survival needs
   hunger: 50,
@@ -55,6 +56,7 @@ const gameState = {
   fires: [],
   nearFire: false,
   fireContactTime: 0,
+  closestFireDistance: Infinity,
   temperature: 65,
   gameTime: 7 * 60, // Start at 7:00 AM (in minutes)
   gameDay: 0, // Track current day number
@@ -511,8 +513,13 @@ class GameScene extends Phaser.Scene {
 // =======================
   create() {
   // Reset game state when scene restarts
-  gameState.health = 100;
-  gameState.maxHealth = 100;
+    gameState.health = 100; 
+    gameState.maxHealth = 100; 
+    // Universal game over check: prevent all player actions and sprite changes
+    if (gameState.gameOver) {
+      // Optionally, you can add any game over animation or logic here
+      return;
+    }
   gameState.hunger = 50;
   gameState.thirst = 50;
   gameState.gameOver = false;
@@ -1935,7 +1942,7 @@ class GameScene extends Phaser.Scene {
   });
 
   // Berry picking interaction: use up arrow when overlapping
-  if ((Phaser.Input.Keyboard.JustDown(gameState.cursors.up) || Phaser.Input.Keyboard.JustDown(gameState.wKey)) && !gameState.buildMode && !gameState.buildMenuOpen) {
+  if (!gameState.gameOver && (Phaser.Input.Keyboard.JustDown(gameState.cursors.up) || Phaser.Input.Keyboard.JustDown(gameState.wKey)) && !gameState.buildMode && !gameState.buildMenuOpen) {
     gameState.berryBushes.getChildren().forEach(bush => {
       if (!bush.getData('regrowing') && bush.getData('berries') > 0) {
         const dist = Phaser.Math.Distance.Between(
@@ -2932,8 +2939,8 @@ class GameScene extends Phaser.Scene {
           }
 
           if (underTree || underShelter) newTemp -= 5;
-          if (gameState.nearFire && closestFireDistance < playerBodyLength * 2) {
-            const distanceInWidths = closestFireDistance / playerBodyLength;
+          if (gameState.nearFire && gameState.closestFireDistance < gameState.playerBodyLength * 2) {
+            const distanceInWidths = gameState.closestFireDistance / gameState.playerBodyLength;
             if (distanceInWidths > 1 && distanceInWidths <= 2) newTemp += 7;
           }
 
@@ -3116,9 +3123,8 @@ class GameScene extends Phaser.Scene {
 
   const span = segB.h - segA.h;
   const frac = span > 0 ? (hh - segA.h) / span : 0;
-  // Cosine easing for smooth start/stop
-  const mu2 = (1 - Math.cos(frac * Math.PI)) / 2;
-  gameState.temperature = segA.temp * (1 - mu2) + segB.temp * mu2;
+  // Linear interpolation for constant rate
+  gameState.temperature = segA.temp * (1 - frac) + segB.temp * frac;
   gameState.tempText.setText(`${Math.round(gameState.temperature)}°F`);
 
   // -----------------
@@ -3126,9 +3132,9 @@ class GameScene extends Phaser.Scene {
   // -----------------
   // Check distance to all active fires
   gameState.nearFire = false;
-  let closestFireDistance = Infinity;
+   gameState.closestFireDistance = Infinity;
   let touchingFire = false;
-  const playerBodyLength = 64;
+  gameState.playerBodyLength = 64;
 
   gameState.fires.forEach(fire => {
     if (fire && fire.active) {
@@ -3165,20 +3171,20 @@ class GameScene extends Phaser.Scene {
         fire.y
       );
 
-      if (distance < closestFireDistance) {
-        closestFireDistance = distance;
+      if (distance < gameState.closestFireDistance) {
+        gameState.closestFireDistance = distance;
       }
 
       // Check if touching fire (< 30px)
       if (distance < 30) {
         touchingFire = true;
-        if (!gameState.isClimbing && !gameState.isJumping && !gameState.isLanding) {
+        if (!gameState.isClimbing && !gameState.isJumping && !gameState.isLanding && !gameState.gameOver) {
           gameState.player.setTexture('fire_player');
         }
       }
 
       // Check if within warming range (< 128px)
-      if (distance < playerBodyLength * 2) {
+      if (distance < gameState.playerBodyLength * 2) {
         gameState.nearFire = true;
       }
     }
@@ -3224,7 +3230,7 @@ class GameScene extends Phaser.Scene {
 
   // Check if player is touching fire (within player width = 64px)
   let touchingFireBurn = false;
-  if (touchingFire && closestFireDistance < playerBodyLength) {
+  if (touchingFire && gameState.closestFireDistance < gameState.playerBodyLength) {
     touchingFireBurn = true;
     const now = Date.now();
     // Add +5°F every 1000ms when touching fire
@@ -3240,8 +3246,8 @@ class GameScene extends Phaser.Scene {
 
     // Check if player is near fire (more than 1 width away but no more than 2 widths away)
     let nearFireBonus = 0;
-    if (gameState.nearFire && closestFireDistance < playerBodyLength * 2) {
-      const distanceInWidths = closestFireDistance / playerBodyLength;
+    if (gameState.nearFire && gameState.closestFireDistance < gameState.playerBodyLength * 2) {
+      const distanceInWidths = gameState.closestFireDistance / gameState.playerBodyLength;
       // If between 1 and 2 widths away: +7 degrees
       if (distanceInWidths > 1 && distanceInWidths <= 2) {
         nearFireBonus = 7;
@@ -3300,7 +3306,13 @@ class GameScene extends Phaser.Scene {
       if (gameState.player.anims) {
         gameState.player.anims.stop();
       }
-
+      // Disable all movement and input
+      gameState.player.setVelocityX(0);
+      gameState.player.setVelocityY(0);
+      if (gameState.player.body) {
+        gameState.player.body.setAllowGravity(false);
+        gameState.player.body.setGravityY(0);
+      }
       // Play death scream
       const deathScream = this.sound.add('death_scream');
       deathScream.play();
@@ -3840,6 +3852,7 @@ class GameScene extends Phaser.Scene {
           // Stop all sounds before restarting
           this.sound.stopAll();
           this.scene.restart();
+          gameState.gameOver = false;
         });
 
         // Main Menu button (below Try Again)
@@ -4200,8 +4213,8 @@ class GameScene extends Phaser.Scene {
           newTemp -= 5; // Shade effect
         }
 
-        if (gameState.nearFire && closestFireDistance < playerBodyLength * 2) {
-          const distanceInWidths = closestFireDistance / playerBodyLength;
+        if (gameState.nearFire && gameState.closestFireDistance < gameState.playerBodyLength * 2) {
+          const distanceInWidths = gameState.closestFireDistance / gameState.playerBodyLength;
           if (distanceInWidths > 1 && distanceInWidths <= 2) {
             newTemp += 7; // Fire effect
           }
